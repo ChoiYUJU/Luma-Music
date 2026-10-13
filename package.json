@@ -1,0 +1,65 @@
+{
+  "name": "luma-music",
+  "version": "1.0.0",
+  "description": "A polished, privacy-first local music player for Linux with a restrained glass interface",
+  "private": false,
+  "type": "module",
+  "main": "src/main.mjs",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "check": "node --check src/main.mjs && node --check src/preload.cjs && node --check src/renderer.js",
+    "dist": "electron-builder --linux AppImage deb",
+    "dist:appimage": "electron-builder --linux AppImage",
+    "dist:deb": "electron-builder --linux deb",
+    "test": "npm run check && node scripts/check-structure.mjs"
+  },
+  "dependencies": {
+    "music-metadata": "^12.2.0"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.17.0"
+  },
+  "build": {
+    "appId": "org.lumamusic.player",
+    "productName": "Luma Music",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*"
+    ],
+    "linux": {
+      "category": "AudioVideo",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "synopsis": "A polished open-source local music player",
+      "description": "A free, open-source local music player with library browsing, playlists, local lyrics and an equalizer.",
+      "icon": "build/icons"
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ]
+    }
+  }
+}

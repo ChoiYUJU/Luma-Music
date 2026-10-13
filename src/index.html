@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' luma-audio: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#111312">
+  <title>Luma Music</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./renderer.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-row">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <div class="brand-copy"><strong>luma</strong><small>MUSIC PLAYER</small></div>
+      </div>
+
+      <div class="side-section-label">PEMUTARAN</div>
+      <nav class="primary-nav playback-nav" aria-label="Pemutaran">
+        <button class="nav-item" data-view="now-playing"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>Sedang Diputar</button>
+      </nav>
+
+      <div class="side-section-label library-nav-label">PERPUSTAKAAN</div>
+      <nav class="primary-nav" aria-label="Navigasi utama">
+        <button class="nav-item active" data-view="home"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg></span>Beranda</button>
+        <button class="nav-item" data-view="songs"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></span>Semua lagu <span id="song-count" class="nav-count">0</span></button>
+        <button class="nav-item" data-view="albums"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v6"/></svg></span>Album</button>
+        <button class="nav-item" data-view="artists"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span>Artis</button>
+        <button class="nav-item" data-view="favorites"><span class="nav-icon heart-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/></svg></span>Favorit</button>
+      </nav>
+
+      <div class="playlist-heading">
+        <div class="side-section-label">PLAYLIST</div>
+        <button id="create-playlist" class="icon-button small" title="Buat playlist" aria-label="Buat playlist">＋</button>
+      </div>
+      <nav id="playlist-nav" class="playlist-nav" aria-label="Playlist pribadi"></nav>
+
+      <div class="sidebar-bottom">
+        <div class="library-status-card">
+          <div class="status-orb"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+          <div class="status-copy"><strong id="library-status-title">Perpustakaan lokal</strong><small id="library-status-detail">Belum ada folder musik</small></div>
+        </div>
+        <button id="settings-button" class="settings-link"><span><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="m19.4 15 1.1 1.9-2 3.4-2.2-.3a7.9 7.9 0 0 1-2 .9l-1.3 1.7H9l-.6-2.1a8 8 0 0 1-1.8-1.1l-2.2.3-2-3.4L3.5 14a8 8 0 0 1 0-2l-1.1-1.9 2-3.4 2.2.3a8 8 0 0 1 1.8-1.1L9 3.8h4l.7 2.1a8 8 0 0 1 2 .9l2.2-.3 2 3.4-1.1 2a8 8 0 0 1 .6 1.6Z"/></svg></span> Pengaturan & sumber</button>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div class="back-forward" aria-label="Navigasi halaman"><button id="nav-back" class="icon-button" title="Kembali" aria-label="Kembali">‹</button><button id="nav-forward" class="icon-button" title="Maju" aria-label="Maju">›</button></div>
+        <label class="search-box"><span class="search-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg></span><input id="search-input" type="search" placeholder="Cari lagu, album, atau artis…" autocomplete="off"><kbd>Ctrl K</kbd></label>
+        <button id="import-folder" class="primary-button"><span>＋</span> Impor musik</button>
+        <button id="rescan-folder" class="icon-button" title="Pindai ulang perpustakaan" aria-label="Pindai ulang">↻</button>
+      </header>
+
+      <section id="content" class="content-area" tabindex="-1">
+        <div class="loading-state"><div class="loading-disc"></div><strong>Memuat perpustakaan musik…</strong><p>Menyiapkan file dan metadata lokal.</p></div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="player-bar">
+    <div class="now-playing">
+      <button id="now-cover" type="button" class="mini-cover cover-placeholder" title="Buka Sedang Diputar" aria-label="Buka Sedang Diputar"><span>♫</span></button>
+      <button id="player-now-playing" type="button" class="now-copy" title="Buka Sedang Diputar" aria-label="Buka Sedang Diputar"><strong id="now-title">Belum ada lagu diputar</strong><span id="now-artist">Impor folder musik untuk memulai</span></button>
+      <button id="now-favorite" class="icon-button favorite-button" title="Tambah ke favorit" aria-label="Tambah ke favorit" disabled>♡</button>
+    </div>
+
+    <div class="transport">
+      <div class="transport-buttons">
+        <button id="shuffle-button" class="transport-minor" title="Acak" aria-label="Acak">⤨</button>
+        <button id="previous-button" class="transport-minor" title="Lagu sebelumnya" aria-label="Lagu sebelumnya">|‹</button>
+        <button id="play-button" class="play-button" title="Putar" aria-label="Putar" disabled>▶</button>
+        <button id="next-button" class="transport-minor" title="Lagu berikutnya" aria-label="Lagu berikutnya">›|</button>
+        <button id="repeat-button" class="transport-minor" title="Ulangi: mati" aria-label="Ulangi">↻</button>
+      </div>
+      <div class="timeline-row"><span id="current-time">0:00</span><input id="seek-slider" type="range" min="0" max="1000" value="0" aria-label="Posisi lagu"><span id="total-time">0:00</span></div>
+    </div>
+
+    <div class="player-extras"><button id="lyrics-button" class="icon-button extra-button" title="Lirik lokal (L)" aria-label="Buka lirik">LYR</button><button id="equalizer-button" class="icon-button extra-button" title="Equalizer" aria-label="Buka equalizer">EQ</button><span class="volume-symbol">◖</span><input id="volume-slider" type="range" min="0" max="1" step="0.01" value="0.78" aria-label="Volume"><button id="queue-button" class="icon-button queue-button" title="Lihat antrean" aria-label="Lihat antrean">☷</button></div>
+    <audio id="audio-engine" preload="metadata" crossorigin="anonymous"></audio>
+  </footer>
+
+  <div id="track-context-menu" class="track-context-menu" role="menu" aria-label="Menu lagu" hidden>
+    <div id="context-track-label" class="context-track-label">Lagu</div>
+    <button type="button" role="menuitem" data-context-action="play-now">Putar sekarang</button>
+    <button type="button" role="menuitem" data-context-action="play-next">Putar berikutnya</button>
+    <button type="button" role="menuitem" data-context-action="add-queue">Tambahkan ke antrean</button>
+    <div class="context-divider"></div>
+    <button type="button" role="menuitem" data-context-action="playlist">Tambahkan ke playlist…</button>
+    <button type="button" role="menuitem" data-context-action="favorite">Tambah ke favorit</button>
+  </div>
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <dialog id="settings-dialog" class="app-dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">LUMA MUSIC</span><h2>Pengaturan & sumber</h2></div><button id="close-settings" class="icon-button" aria-label="Tutup">×</button></div>
+    <div class="settings-block"><h3>Perpustakaan lokal</h3><p id="settings-folder">Belum ada folder musik yang dipilih.</p><div class="settings-actions"><button id="settings-import" class="primary-button">Pilih folder musik</button><button id="forget-library" class="secondary-button">Lepas perpustakaan</button></div></div>
+    <div class="settings-block"><h3>Tampilan</h3><p>Material kaca buram memakai transparansi secukupnya. Pilih mode solid jika efek blur terasa berat di perangkatmu.</p><label class="setting-select-row" for="material-mode"><span>Material jendela</span><select id="material-mode"><option value="glass">Glass · kaca buram</option><option value="solid">Solid · tanpa blur</option></select></label></div>
+    <div class="settings-block"><h3>Privasi</h3><p>Luma memutar file lokal. Tidak ada akun, iklan, pelacak, atau koneksi streaming. Audio dilayani melalui protokol lokal yang hanya mengenali berkas di perpustakaan.</p></div>
+    <div class="settings-block"><h3>Pintasan keyboard</h3><p><strong>Spasi</strong> putar/jeda · <strong>Ctrl+K</strong> cari · <strong>Ctrl+6</strong> Sedang Diputar · <strong>Alt+← / Alt+→</strong> lagu sebelumnya/berikutnya · <strong>← / →</strong> lompat 5 detik · <strong>M</strong> senyap/pulihkan volume · <strong>L</strong> lirik · <strong>E</strong> equalizer · <strong>Q</strong> antrean.</p></div>
+    <div class="settings-block"><h3>Versi</h3><p>Luma Music 1.0.0 · Open-source · Lisensi MIT</p></div>
+  </dialog>
+
+  <dialog id="equalizer-dialog" class="app-dialog equalizer-dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">KONTROL AUDIO</span><h2>Equalizer</h2><p class="dialog-subtitle">10 band · pemrosesan audio lokal</p></div><button id="close-equalizer" class="icon-button" aria-label="Tutup">×</button></div>
+    <div class="eq-toolbar"><label for="eq-preset">Preset</label><select id="eq-preset"><option value="Flat">Flat</option><option value="Bass Boost">Bass Boost</option><option value="Vocal">Vocal</option><option value="Pop">Pop</option><option value="Rock">Rock</option><option value="Classical">Classical</option><option value="Treble Boost">Treble Boost</option><option value="Custom">Custom</option></select><button id="eq-reset" class="secondary-button">Reset</button></div>
+    <label class="preamp-control"><span>Preamp</span><input id="eq-preamp" type="range" min="-12" max="12" step="0.5" value="0"><output id="eq-preamp-value">0 dB</output></label>
+    <canvas id="eq-curve" height="170" aria-label="Kurva respons equalizer"></canvas>
+    <div id="eq-bands" class="eq-bands"></div>
+    <p class="eq-note">Equalizer memengaruhi suara melalui Web Audio. Level berlebihan boleh menyebabkan clipping; turunkan preamp bila terdengar distorsi.</p>
+  </dialog>
+
+  <dialog id="lyrics-dialog" class="app-dialog lyrics-dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">LIRIK OFFLINE</span><h2 id="lyrics-track-title">Lirik lagu</h2><p id="lyrics-track-artist" class="dialog-subtitle">File .lrc di samping audio</p></div><button id="close-lyrics" class="icon-button" aria-label="Tutup">×</button></div>
+    <div id="lyrics-content" class="lyrics-content"><div class="lyrics-empty">Putar lagu dan buka lirik .lrc lokal untuk mengikuti musik.</div></div>
+    <p class="lyrics-footnote">Privasi dulu: Luma hanya mencari file .lrc di samping lagu. Tidak ada lirik yang diunduh dari internet.</p>
+  </dialog>
+
+  <dialog id="queue-dialog" class="app-dialog queue-dialog">
+    <div class="dialog-heading"><div><span class="eyebrow">SEDANG DIPUTAR</span><h2>Antrean lagu</h2></div><div class="queue-heading-actions"><button id="clear-queue" class="secondary-button">Kosongkan</button><button id="close-queue" class="icon-button" aria-label="Tutup">×</button></div></div>
+    <div id="queue-list" class="queue-list"></div>
+  </dialog>
+</body>
+</html>

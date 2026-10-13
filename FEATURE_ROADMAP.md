@@ -1,52 +1,35 @@
-# Audit fitur Luma Music
+# Luma Music Feature Roadmap
 
-Dokumen ini memisahkan kemampuan yang sudah terlihat di kode dengan pekerjaan yang masih diperlukan untuk menjadi pemutar musik desktop yang matang.
+## Included in 2.0.0
 
-## Sudah tersedia di sumber 1.0.0
+- Local library scan/cache and metadata/artwork browsing.
+- Fullscreen immersive Now Playing and consistent inline SVG controls.
+- Manual playlists, sorting, queue add/remove and move-up/down controls.
+- Rule-based Smart Playlists using ALL/ANY rules for artist, album, genre, favorites, year, play count, recent play date, added date, duration, and bitrate.
+- Local history, play counts, estimated listening time, recent/most-played collections and Luma Replay.
+- Local Mix and opt-in Local Autoplay based only on local metadata and listening history.
+- M3U/M3U8 import/export, offline lyrics, 10-band EQ, sleep timer.
+- Linux AppImage/DEB build scripts and initial Windows x64 NSIS configuration.
 
-- Pemindaian folder/subfolder audio dan pembacaan metadata melalui `music-metadata`.
-- Cache metadata lokal untuk mengurangi pemindaian ulang berkas yang tidak berubah.
-- Tampilan Beranda, Semua Lagu, Album, Artis, Favorit, playlist, dan Sedang Diputar.
-- Pemutaran HTMLMediaElement, seek, volume, shuffle, repeat off/all/one, dan antrean.
-- Konteks klik-kanan pada lagu untuk pemutaran, antrean, playlist, dan favorit.
-- Lirik lokal `.lrc`/`.txt` serta highlight waktu untuk `.lrc` tersinkron.
-- Equalizer 10 band berbasis Web Audio dengan preset dan preamp.
-- Pintasan keyboard, status Media Session di runtime Chromium, preferensi lokal, dan menu aplikasi Electron.
-- Tema Glass/Solid dan proteksi renderer melalui preload/context isolation serta protokol audio lokal.
+## Must be verified on target systems
 
-## Prioritas sebelum rilis produksi
+1. Run playback tests on MP3, FLAC, WAV, Ogg/Opus and M4A with representative devices.
+2. Test Smart Playlist create/edit/delete, persistence, empty rules, ALL/ANY logic and all field/operator combinations using a real library.
+3. Validate queue reordering across different queue positions and ensure the active track remains stable.
+4. Validate playlist import/export round trips and malformed or relative M3U entries.
+5. Test sleep timer across pause/resume, manual track skips, repeat-one and app shutdown.
+6. Test statistics for long playback, seeking, repeated starts and switching tracks.
+7. Test Local Autoplay on queue completion and verify it only chooses library tracks.
+8. Build and test AppImage/DEB on Linux Mint and NSIS on a Windows x64 system.
 
-### P0 — Kualitas dasar dan uji regresi
+## Next candidates
 
-- Uji pada Linux Mint XFCE nyata: impor, scan ulang, hilangnya file, pemulihan favorit/playlist, dan pengaturan cache.
-- Uji decode MP3, FLAC, WAV, Ogg/Opus, M4A/AAC di Chromium/Electron target.
-- Uji seek panjang, lagu rusak, audio error, perubahan sample rate, repeat-one/all, shuffle, serta file tanpa tag.
-- Uji jendela pada resolusi rendah, tema Solid, akses keyboard, pembaca layar, dan skala tampilan desktop.
-- Bangun dan pasang `.deb` serta AppImage dari lingkungan Linux; periksa dependensi paket dan jalankan smoke test.
+- Playlist folders and import/export of playlists as a bundle.
+- A visual, sortable queue with drag-and-drop (currently move-up/down controls).
+- Smart collection editor improvements and playlist rule explanations.
+- Investigate a dedicated audio engine for actual crossfade/gapless, plus ReplayGain/EBU R128.
+- Metadata tag editing, CUE virtual tracks, and native MPRIS2/D-Bus integration.
 
-### P1 — Fitur manajemen koleksi
+## Out of scope for a local-first player unless designed as a separate project
 
-- Pengurutan interaktif (judul, artis, album, tahun, durasi, terakhir ditambahkan) dan filter genre/format.
-- Impor/ekspor M3U dan playlist pintar berbasis aturan.
-- Pengeditan tag dan pengelolaan beberapa folder musik.
-- Riwayat pemutaran, play count, statistik koleksi, dan daftar terbaru berdasarkan tanggal indeks, bukan hanya mtime.
-- Dukungan drag-and-drop untuk folder/file melalui API Electron yang aman.
-- Dukungan CUE sebagai trek virtual, urutan disk untuk album multi-disc, serta pengelolaan beberapa folder musik.
-
-### P2 — Audio engine dan desktop Linux
-
-- Evaluasi GStreamer atau libVLC untuk gapless yang lebih andal dan dukungan codec yang lebih luas.
-- ReplayGain serta normalisasi EBU R128 dengan pengukuran nyata, bukan preset EQ.
-- MPRIS2/D-Bus untuk kontrol media native di Linux dan notifikasi desktop.
-- Pemilihan perangkat output / backend audio dan diagnosis underrun.
-- Crossfade opsional dan visualisasi yang tidak membebani CPU saat tidak aktif.
-
-### P3 — Ekosistem opsional
-
-- Integrasi server musik pribadi (mis. Jellyfin/Subsonic) sebagai provider terpisah.
-- Pencarian sampul/lirik dengan opt-in eksplisit, status sumber, dan pengaturan privasi.
-- Scrobbling Last.fm/ListenBrainz yang opt-in.
-
-## Yang sengaja tidak diklaim
-
-Luma Music 1.0.0 tidak mengklaim pemutaran bit-perfect, gapless yang terjamin, MPRIS2 native, ReplayGain/EBU R128, atau dukungan seluruh codec. Hal tersebut memerlukan implementasi dan pengujian audio yang belum ada di versi ini.
+- Licensed music-streaming catalog, Spotify DJ, online radio, cloud sync/profiles, streaming recommendations or collaborative playlists. These require a service, licensing and account/security design; Luma must not pretend local heuristics are those services.

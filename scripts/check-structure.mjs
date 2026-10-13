@@ -17,6 +17,8 @@ for (const selector of ['.album-detail-hero', '.artist-detail-hero', '.detail-ar
 }
 assert.match(css, /backdrop-filter:\s*blur\(/, 'Glass material style is missing.');
 assert.match(css, /body\[data-material=\"solid\"\]/, 'Solid low-resource material mode is missing.');
+assert.match(css, /\.local-mix-hero/, 'Local mix visual system is missing.');
+assert.match(css, /\.replay-grid/, 'Luma Replay stats styling is missing.');
 
 
 const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
@@ -37,6 +39,22 @@ assert.match(main, /protocol\.handle\('luma-audio'/, 'Custom local audio protoco
 assert.match(main, /Access-Control-Allow-Origin/, 'Web Audio CORS response headers are missing.');
 assert.match(preload, /contextBridge\.exposeInMainWorld/, 'Preload bridge is missing.');
 assert.match(preload, /loadAdjacentLyrics/, 'Local lyrics API is missing.');
+assert.match(preload, /importPlaylistM3U/, 'M3U import bridge is missing.');
+assert.match(preload, /exportPlaylistM3U/, 'M3U export bridge is missing.');
+assert.match(main, /playlist:import-m3u/, 'M3U import handler is missing.');
+assert.match(main, /playlist:export-m3u/, 'M3U export handler is missing.');
+assert.match(renderer, /function renderLocalMix/, 'Local smart mix page is missing.');
+assert.match(renderer, /function renderLumaReplay/, 'Luma Replay page is missing.');
+assert.match(renderer, /function smartPlaylistTracks/, 'Rule-based smart playlists are missing.');
+assert.match(renderer, /function openSmartPlaylistEditor/, 'Smart playlist editor is missing.');
+assert.match(renderer, /function saveSmartPlaylistFromDialog/, 'Smart playlist save handler is missing.');
+assert.match(html, /id="smart-playlist-dialog"/, 'Smart playlist dialog is missing.');
+assert.match(html, /id="smart-playlist-rules"/, 'Smart playlist rules host is missing.');
+assert.match(html, /id="smart-playlist-nav"/, 'Smart playlist sidebar is missing.');
+assert.match(main, /create-smart-playlist/, 'Native menu command for smart playlists is missing.');
+assert.match(css, /\.smart-rule-row\s*\{/, 'Smart playlist rules need styling.');
+assert.match(renderer, /function startSleepTimer/, 'Sleep timer is missing.');
+assert.match(renderer, /function sortedTracks/, 'Library sorting is missing.');
 assert.match(main, /label: 'Pemutaran'/, 'Native playback menu is missing.');
 assert.match(main, /view:now-playing/, 'Desktop navigation command for Now Playing is missing.');
 assert.match(preload, /onMenuCommand/, 'Native menu command bridge is missing.');
@@ -48,8 +66,15 @@ assert.match(html, /id="track-context-menu"/, 'Track context menu is missing.');
 assert.match(html, /data-view="now-playing"/, 'Sidebar Now Playing navigation is missing.');
 assert.match(renderer, /function renderNowPlaying\(/, 'Now Playing page is missing.');
 assert.match(renderer, /function addTrackToQueue/, 'Queue append/priority actions are missing.');
+assert.match(renderer, /function moveQueuePosition\(/, 'Queue reordering function is missing.');
+assert.match(renderer, /data-action=\"move-queue-position\"/, 'Queue move controls are missing.');
+assert.match(renderer, /const canMoveDown = pos < playQueue\.length - 1 && \(queuePosition < 0 \|\| pos > queuePosition\)/, 'The active queue item should not offer a misleading move-down control.');
+assert.match(renderer, /position <= queuePosition \|\| target <= queuePosition/, 'Queue reorder must not move tracks across the active position.');
+assert.match(renderer, /function moveQueuePosition\(/, 'Queue reordering function is missing.');
+assert.match(renderer, /data-action=\"move-queue-position\"/, 'Queue move controls are missing.');
+assert.match(renderer, /position <= queuePosition \|\| target <= queuePosition/, 'Queue reorder must not move tracks across the active position.');
 assert.match(renderer, /function applyMaterialMode/, 'Glass/solid material setting is missing.');
-assert.equal(pkg.version, '1.1.1', 'Unexpected package version.');
+assert.equal(pkg.version, '2.0.0', 'Unexpected package version.');
 assert.ok(Number.parseInt(pkg.engines.node.replace(/[^0-9]/g, ''), 10) >= 22, 'Node.js 22+ is required for the build environment.');
 
 assert.match(html, /id="immersive-player"/, 'Immersive Now Playing overlay is missing.');

@@ -347,6 +347,75 @@ async function serveAudio(request) {
   return new Response(Readable.toWeb(stream), { status: range ? 206 : 200, headers });
 }
 
+
+async function importPlaylistM3U(event) {
+  assertTrustedSender(event);
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Impor playlist M3U',
+    buttonLabel: 'Impor playlist',
+    properties: ['openFile'],
+    filters: [{ name: 'Playlist M3U', extensions: ['m3u', 'm3u8'] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { canceled: true };
+  const filePath = result.filePaths[0];
+  const stat = await fs.stat(filePath);
+  if (!stat.isFile() || stat.size > 8 * 1024 * 1024) throw new Error('File playlist terlalu besar atau tidak valid (maksimal 8 MiB).');
+  const raw = await fs.readFile(filePath, 'utf8');
+  const data = await readCache();
+  if (!data.folder) throw new Error('Pilih folder musik terlebih dahulu sebelum mengimpor playlist.');
+  const byPath = new Map(data.tracks.map(track => [path.resolve(track.path), track.id]));
+  const byName = new Map();
+  for (const track of data.tracks) {
+    const base = path.basename(track.path).toLocaleLowerCase();
+    if (!byName.has(base)) byName.set(base, []);
+    byName.get(base).push(track.id);
+  }
+  const ids = [];
+  for (const line of raw.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const value = line.trim();
+    if (!value || value.startsWith('#')) continue;
+    let candidate;
+    try {
+      candidate = path.isAbsolute(value) ? path.resolve(value) : path.resolve(path.dirname(filePath), value);
+    } catch { continue; }
+    let id = isInside(data.folder, candidate) ? byPath.get(candidate) : null;
+    if (!id && !path.isAbsolute(value)) {
+      const matches = byName.get(path.basename(value).toLocaleLowerCase()) || [];
+      if (matches.length === 1) id = matches[0];
+    }
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return { canceled: false, name: path.basename(filePath).replace(/\.m3u8?$/i, '') || 'Playlist impor', trackIds: ids };
+}
+
+async function exportPlaylistM3U(event, payload) {
+  assertTrustedSender(event);
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.trackIds)) throw new Error('Data playlist tidak valid.');
+  const name = typeof payload.name === 'string' ? payload.name.trim().slice(0, 120) : 'Luma Playlist';
+  const ids = [...new Set(payload.trackIds.filter(id => typeof id === 'string'))].slice(0, 100000);
+  const data = await readCache();
+  if (!data.folder) throw new Error('Perpustakaan musik belum dipilih.');
+  const byId = new Map(data.tracks.map(track => [track.id, track]));
+  const tracks = ids.map(id => byId.get(id)).filter(track => track?.path && isInside(data.folder, track.path));
+  const safeName = (name || 'Luma Playlist').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 100);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Ekspor playlist M3U',
+    defaultPath: `${safeName}.m3u8`,
+    buttonLabel: 'Simpan playlist',
+    filters: [{ name: 'Playlist M3U8', extensions: ['m3u8', 'm3u'] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  const lines = ['#EXTM3U'];
+  for (const track of tracks) {
+    const duration = Number.isFinite(track.duration) ? Math.round(track.duration) : -1;
+    const artist = String(track.artist || 'Unknown Artist').replace(/[\r\n]/g, ' ');
+    const title = String(track.title || path.basename(track.path)).replace(/[\r\n]/g, ' ');
+    lines.push(`#EXTINF:${duration},${artist} - ${title}`, track.path);
+  }
+  await fs.writeFile(result.filePath, `${lines.join('\n')}\n`, 'utf8');
+  return { canceled: false, count: tracks.length };
+}
+
 async function loadAdjacentLyrics(trackId) {
   if (typeof trackId !== 'string' || !/^[a-f0-9]{32}$/.test(trackId)) return { lyrics: null, synced: false };
   const data = await readCache();
@@ -387,6 +456,7 @@ function installApplicationMenu() {
       submenu: [
         { label: 'Tambah Folder Musik…', accelerator: 'CmdOrCtrl+O', click: () => sendMenuCommand('choose-folder') },
         { label: 'Pindai Ulang Perpustakaan', accelerator: 'F5', click: () => sendMenuCommand('rescan-library') },
+        { label: 'Impor Playlist M3U…', click: () => sendMenuCommand('import-playlist-m3u') },
         { type: 'separator' },
         { label: 'Pengaturan…', click: () => sendMenuCommand('open-settings') },
         { type: 'separator' },
@@ -413,6 +483,7 @@ function installApplicationMenu() {
         { label: 'Ulangi Satu Lagu', id: 'repeat-one', type: 'radio', checked: false, click: () => sendMenuCommand('repeat-mode:2') },
         { type: 'separator' },
         { label: 'Tampilkan Antrean', accelerator: 'CmdOrCtrl+Shift+Q', click: () => sendMenuCommand('show-queue') },
+        { label: 'Timer Tidur…', click: () => sendMenuCommand('open-sleep-timer') },
         { label: 'Tampilkan Lirik Lokal', accelerator: 'CmdOrCtrl+Shift+L', click: () => sendMenuCommand('show-lyrics') },
         { label: 'Equalizer…', accelerator: 'CmdOrCtrl+Shift+E', click: () => sendMenuCommand('show-equalizer') }
       ]
@@ -426,6 +497,11 @@ function installApplicationMenu() {
         { label: 'Album', accelerator: 'CmdOrCtrl+3', click: () => sendMenuCommand('view:albums') },
         { label: 'Artis', accelerator: 'CmdOrCtrl+4', click: () => sendMenuCommand('view:artists') },
         { label: 'Favorit', accelerator: 'CmdOrCtrl+5', click: () => sendMenuCommand('view:favorites') },
+        { label: 'Mix untukmu', click: () => sendMenuCommand('view:smart-mix') },
+        { label: 'Baru ditambahkan', click: () => sendMenuCommand('view:recently-added') },
+        { label: 'Baru diputar', click: () => sendMenuCommand('view:recently-played') },
+        { label: 'Paling sering diputar', click: () => sendMenuCommand('view:most-played') },
+        { label: 'Luma Replay', click: () => sendMenuCommand('view:luma-replay') },
         { type: 'separator' },
         { label: 'Cari…', accelerator: 'CmdOrCtrl+K', click: () => sendMenuCommand('focus-search') },
         { label: 'Kembali', accelerator: 'Alt+[' , click: () => sendMenuCommand('navigate-back') },
@@ -436,6 +512,7 @@ function installApplicationMenu() {
       label: 'Perpustakaan',
       submenu: [
         { label: 'Playlist Baru…', accelerator: 'CmdOrCtrl+Shift+N', click: () => sendMenuCommand('create-playlist') },
+        { label: 'Playlist Pintar Baru…', click: () => sendMenuCommand('create-smart-playlist') },
         { label: 'Putar Semua Lagu', click: () => sendMenuCommand('play-library') },
         { label: 'Kosongkan Antrean Berikutnya', click: () => sendMenuCommand('clear-upcoming-queue') }
       ]
@@ -497,6 +574,14 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 }
 
+ipcMain.handle('window:set-fullscreen', (event, enabled) => {
+  assertTrustedSender(event);
+  if (typeof enabled !== 'boolean') throw new Error('Status layar penuh harus berupa boolean.');
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  mainWindow.setFullScreen(enabled);
+  return mainWindow.isFullScreen();
+});
+
 ipcMain.handle('library:load', async event => {
   assertTrustedSender(event);
   const data = await readCache();
@@ -542,6 +627,9 @@ ipcMain.handle('library:migrate-track-ids', async (event, ids) => {
   }
   return ids.slice(0, 50000).map(id => typeof id === 'string' ? (aliases.get(id) || id) : id);
 });
+
+ipcMain.handle('playlist:import-m3u', importPlaylistM3U);
+ipcMain.handle('playlist:export-m3u', exportPlaylistM3U);
 
 ipcMain.handle('lyrics:load-adjacent', async (event, trackId) => {
   assertTrustedSender(event);

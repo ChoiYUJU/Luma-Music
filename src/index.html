@@ -14,7 +14,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand-row">
-        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <img class="brand-mark" src="../assets/branding/luma-music-logo.png" alt="" aria-hidden="true">
         <div class="brand-copy"><strong>luma</strong><small>MUSIC PLAYER</small></div>
       </div>
 
@@ -32,9 +32,24 @@
         <button class="nav-item" data-view="favorites"><span class="nav-icon heart-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/></svg></span>Favorit</button>
       </nav>
 
+      <div class="side-section-label smart-library-label">DENGARKAN LAGI</div>
+      <nav class="primary-nav smart-library-nav" aria-label="Koleksi pintar">
+        <button class="nav-item" data-view="smart-mix"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z"/><path d="m19 15 .9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15Z"/></svg></span>Mix untukmu</button>
+        <button class="nav-item" data-view="recently-added"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M8 3v4M16 3v4M3.5 10h17M8 14h3M8 17h7"/></svg></span>Baru ditambahkan</button>
+        <button class="nav-item" data-view="recently-played"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg></span>Baru diputar</button>
+        <button class="nav-item" data-view="most-played"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/></svg></span>Paling sering</button>
+        <button class="nav-item" data-view="luma-replay"><span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V6M8 15V9M12 20V4M16 15V9M20 18V6"/></svg></span>Luma Replay</button>
+      </nav>
+
       <div class="playlist-heading">
+        <div class="side-section-label">PLAYLIST PINTAR</div>
+        <div class="playlist-heading-actions"><button id="create-smart-playlist" class="icon-button small" title="Buat playlist pintar" aria-label="Buat playlist pintar"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18"/><path d="m5 5 2 2m10 10 2 2M19 5l-2 2M7 17l-2 2"/></svg></button></div>
+      </div>
+      <nav id="smart-playlist-nav" class="playlist-nav smart-playlist-nav" aria-label="Playlist pintar"></nav>
+
+      <div class="playlist-heading regular-playlist-heading">
         <div class="side-section-label">PLAYLIST</div>
-        <button id="create-playlist" class="icon-button small" title="Buat playlist" aria-label="Buat playlist">＋</button>
+        <div class="playlist-heading-actions"><button id="import-playlist" class="icon-button small" title="Impor playlist M3U" aria-label="Impor playlist M3U"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></button><button id="create-playlist" class="icon-button small" title="Buat playlist" aria-label="Buat playlist">＋</button></div>
       </div>
       <nav id="playlist-nav" class="playlist-nav" aria-label="Playlist pribadi"></nav>
 
@@ -150,9 +165,22 @@
     <div class="dialog-heading"><div><span class="eyebrow">LUMA MUSIC</span><h2>Pengaturan & sumber</h2></div><button id="close-settings" class="icon-button" aria-label="Tutup">×</button></div>
     <div class="settings-block"><h3>Perpustakaan lokal</h3><p id="settings-folder">Belum ada folder musik yang dipilih.</p><div class="settings-actions"><button id="settings-import" class="primary-button">Pilih folder musik</button><button id="forget-library" class="secondary-button">Lepas perpustakaan</button></div></div>
     <div class="settings-block"><h3>Tampilan</h3><p>Material kaca buram memakai transparansi secukupnya. Pilih mode solid jika efek blur terasa berat di perangkatmu.</p><label class="setting-select-row" for="material-mode"><span>Material jendela</span><select id="material-mode"><option value="glass">Glass · kaca buram</option><option value="solid">Solid · tanpa blur</option></select></label></div>
-    <div class="settings-block"><h3>Privasi</h3><p>Luma memutar file lokal. Tidak ada akun, iklan, pelacak, atau koneksi streaming. Audio dilayani melalui protokol lokal yang hanya mengenali berkas di perpustakaan.</p></div>
-    <div class="settings-block"><h3>Pintasan keyboard</h3><p><strong>F</strong> layar penuh saat berada di Sedang Diputar · <strong>Esc</strong> keluar dari layar penuh · <strong>Spasi</strong> putar/jeda · <strong>Ctrl+K</strong> cari · <strong>Ctrl+6</strong> Sedang Diputar · <strong>F</strong> layar penuh saat membuka Sedang Diputar · <strong>Esc</strong> kembali dari layar penuh · <strong>Alt+← / Alt+→</strong> lagu sebelumnya/berikutnya · <strong>← / →</strong> lompat 5 detik · <strong>M</strong> senyap/pulihkan volume · <strong>L</strong> lirik · <strong>E</strong> equalizer · <strong>Q</strong> antrean.</p></div>
-    <div class="settings-block"><h3>Versi</h3><p>Luma Music 1.1.1 · Open-source · Lisensi MIT</p></div>
+    <div class="settings-block"><h3>Pengalaman mendengarkan</h3><label class="setting-select-row" for="autoplay-local"><span>Lanjutkan dengan lagu serupa dari koleksi lokal</span><input id="autoplay-local" type="checkbox"></label><p class="settings-help">Saat antrean selesai, Luma dapat mencari lagu dengan artis atau genre yang berdekatan dari perpustakaanmu. Semua perhitungan dilakukan lokal.</p></div>
+    <div class="settings-block sleep-timer-settings"><h3>Timer tidur</h3><p>Hentikan pemutaran setelah durasi tertentu atau ketika lagu aktif selesai.</p><div class="sleep-timer-row"><select id="sleep-timer-select" aria-label="Durasi timer tidur"><option value="off">Mati</option><option value="15">15 menit</option><option value="30">30 menit</option><option value="45">45 menit</option><option value="60">1 jam</option><option value="90">1 jam 30 menit</option><option value="end-track">Saat lagu selesai</option></select><button id="sleep-timer-start" class="secondary-button">Aktifkan</button></div><p id="sleep-timer-status" class="sleep-timer-status" aria-live="polite">Timer tidur mati.</p></div>
+    <div class="settings-block"><h3>Privasi</h3><p>Luma memutar file lokal. Tidak ada akun, iklan, pelacak, atau koneksi streaming. Riwayat, statistik, dan mix pribadi tersimpan di perangkat ini.</p></div>
+    <div class="settings-block"><h3>Pintasan keyboard</h3><p><strong>F</strong> layar penuh saat berada di Sedang Diputar · <strong>Esc</strong> keluar dari layar penuh · <strong>Spasi</strong> putar/jeda · <strong>Ctrl+K</strong> cari · <strong>Ctrl+6</strong> Sedang Diputar · <strong>Alt+← / Alt+→</strong> lagu sebelumnya/berikutnya · <strong>← / →</strong> lompat 5 detik · <strong>M</strong> senyap/pulihkan volume · <strong>L</strong> lirik · <strong>E</strong> equalizer · <strong>Q</strong> antrean · <strong>Ctrl+Shift+O</strong> impor playlist M3U.</p></div>
+    <div class="settings-block"><h3>Versi</h3><p>Luma Music 2.0.0 · Open-source · Lisensi MIT</p></div>
+  </dialog>
+
+  <dialog id="smart-playlist-dialog" class="app-dialog smart-playlist-dialog">
+    <form id="smart-playlist-form" method="dialog">
+      <div class="dialog-heading"><div><span class="eyebrow">KOLEKSI DINAMIS</span><h2 id="smart-playlist-dialog-title">Playlist Pintar Baru</h2><p class="dialog-subtitle">Lagu dipilih ulang otomatis dari koleksi lokalmu.</p></div><button id="close-smart-playlist" class="icon-button" type="button" aria-label="Tutup">×</button></div>
+      <div class="settings-block"><label class="smart-playlist-name-label" for="smart-playlist-name">Nama playlist</label><input id="smart-playlist-name" class="text-field" type="text" maxlength="64" required placeholder="Misalnya: GFRIEND favorit"></div>
+      <div class="smart-playlist-rule-toolbar"><div><h3>Aturan</h3><p>Atur kondisi untuk menentukan lagu yang masuk.</p></div><select id="smart-playlist-match" aria-label="Cara mencocokkan aturan"><option value="all">Cocokkan semua aturan</option><option value="any">Cocokkan salah satu aturan</option></select></div>
+      <div id="smart-playlist-rules" class="smart-playlist-rules"></div>
+      <div class="smart-playlist-footer"><button id="smart-playlist-add-rule" class="secondary-button" type="button">＋ Tambah aturan</button><span id="smart-playlist-preview-count" class="smart-playlist-preview-count">Belum ada aturan</span></div>
+      <div class="dialog-actions"><button id="cancel-smart-playlist" class="secondary-button" type="button">Batal</button><button class="primary-button" type="submit">Simpan playlist</button></div>
+    </form>
   </dialog>
 
   <dialog id="equalizer-dialog" class="app-dialog equalizer-dialog">

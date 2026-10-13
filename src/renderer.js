@@ -6,6 +6,8 @@ const audio = $('#audio-engine');
 const content = $('#content');
 const searchInput = $('#search-input');
 const playlistNav = $('#playlist-nav');
+const smartPlaylistNav = $('#smart-playlist-nav');
+const smartPlaylistDialog = $('#smart-playlist-dialog');
 const settingsDialog = $('#settings-dialog');
 const queueDialog = $('#queue-dialog');
 const equalizerDialog = $('#equalizer-dialog');
@@ -21,11 +23,27 @@ const EQ_PRESETS = {
   'Treble Boost': { preamp: -2, bands: [-1, 0, 0, 0, 0, 1, 2, 3, 4, 4] }
 };
 
+const SMART_PLAYLIST_FIELDS = {
+  favorite: { label: 'Status favorit', type: 'select', options: [['yes', 'Favorit'], ['no', 'Bukan favorit']], operators: [['is', 'adalah']] },
+  artist: { label: 'Artis', type: 'text', operators: [['contains', 'memuat'], ['is', 'sama dengan'], ['not-contains', 'tidak memuat']] },
+  album: { label: 'Album', type: 'text', operators: [['contains', 'memuat'], ['is', 'sama dengan'], ['not-contains', 'tidak memuat']] },
+  genre: { label: 'Genre', type: 'text', operators: [['contains', 'memuat'], ['is', 'sama dengan'], ['not-contains', 'tidak memuat']] },
+  year: { label: 'Tahun', type: 'number', operators: [['is', 'sama dengan'], ['at-least', 'minimal'], ['at-most', 'maksimal']] },
+  'play-count': { label: 'Jumlah pemutaran', type: 'number', operators: [['at-least', 'minimal'], ['at-most', 'maksimal']] },
+  'last-played-days': { label: 'Terakhir diputar', type: 'number', operators: [['within-last', 'dalam hari terakhir']] },
+  'added-days': { label: 'Ditambahkan', type: 'number', operators: [['within-last', 'dalam hari terakhir']] },
+  'duration-minutes': { label: 'Durasi (menit)', type: 'number', operators: [['at-least', 'minimal'], ['at-most', 'maksimal']] },
+  'bitrate-kbps': { label: 'Bitrate (kb/s)', type: 'number', operators: [['at-least', 'minimal'], ['at-most', 'maksimal']] }
+};
+
 let library = { folder: null, tracks: [], scannedAt: null };
 let currentView = 'home';
 let currentPlaylist = null;
 let currentAlbumKey = null;
 let currentArtistName = null;
+let currentSmartPlaylistId = null;
+let editingSmartPlaylistId = null;
+let smartPlaylistDraftRules = [];
 let activeTrackId = null;
 let playQueue = [];
 let queuePosition = -1;
@@ -36,6 +54,12 @@ let viewHistory = ['home'];
 let historyPosition = 0;
 let scanUnsubscribe = null;
 let lastSavedPositionBucket = -1;
+let lastStatsWallClock = 0;
+let countedPlaybackStartId = null;
+let sleepTimerInterval = null;
+let sleepTimerEndsAt = 0;
+let sleepTimerEndOfTrack = false;
+let localMixRefreshSeed = 0;
 let audioContext = null;
 let audioSource = null;
 let eqFilters = [];
@@ -60,6 +84,7 @@ function loadAppState() {
     return {
       favorites: Array.isArray(data.favorites) ? data.favorites.filter(item => typeof item === 'string') : [],
       playlists: Array.isArray(data.playlists) ? data.playlists.filter(p => p && typeof p.name === 'string' && Array.isArray(p.ids)).map(p => ({ name: p.name, ids: p.ids.filter(id => typeof id === 'string') })) : [],
+      smartPlaylists: Array.isArray(data.smartPlaylists) ? data.smartPlaylists.filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.rules)).slice(0, 200).map(p => ({ id: p.id, name: p.name.slice(0, 64), match: p.match === 'any' ? 'any' : 'all', rules: p.rules.filter(rule => rule && Object.hasOwn(SMART_PLAYLIST_FIELDS, rule.field) && typeof rule.operator === 'string').slice(0, 20).map(rule => ({ field: rule.field, operator: rule.operator, value: String(rule.value ?? '').slice(0, 120) })) })) : [],
       volume: Number.isFinite(data.volume) ? Math.min(1, Math.max(0, data.volume)) : 0.78,
       lastTrack: typeof data.lastTrack === 'string' ? data.lastTrack : null,
       lastTime: Number.isFinite(data.lastTime) ? Math.max(0, data.lastTime) : 0,
@@ -68,10 +93,16 @@ function loadAppState() {
       eqPreset: typeof data.eqPreset === 'string' && (Object.hasOwn(EQ_PRESETS, data.eqPreset) || data.eqPreset === 'Custom') ? data.eqPreset : 'Flat',
       eqBands: Array.isArray(data.eqBands) && data.eqBands.length === 10 ? data.eqBands.map(v => Number.isFinite(v) ? Math.max(-12, Math.min(12, v)) : 0) : [...EQ_PRESETS.Flat.bands],
       eqPreamp: Number.isFinite(data.eqPreamp) ? Math.max(-12, Math.min(12, data.eqPreamp)) : 0,
-      material: data.material === 'solid' ? 'solid' : 'glass'
+      material: data.material === 'solid' ? 'solid' : 'glass',
+      playHistory: Array.isArray(data.playHistory) ? data.playHistory.filter(item => item && typeof item.id === 'string' && Number.isFinite(item.at)).slice(0, 500) : [],
+      playCounts: data.playCounts && typeof data.playCounts === 'object' && !Array.isArray(data.playCounts) ? Object.fromEntries(Object.entries(data.playCounts).filter(([id, count]) => typeof id === 'string' && Number.isFinite(count) && count >= 0).slice(0, 50000).map(([id, count]) => [id, Math.floor(count)])) : {},
+      addedAt: data.addedAt && typeof data.addedAt === 'object' && !Array.isArray(data.addedAt) ? Object.fromEntries(Object.entries(data.addedAt).filter(([id, at]) => typeof id === 'string' && Number.isFinite(at)).slice(0, 50000)) : {},
+      listenSeconds: data.listenSeconds && typeof data.listenSeconds === 'object' && !Array.isArray(data.listenSeconds) ? Object.fromEntries(Object.entries(data.listenSeconds).filter(([id, seconds]) => typeof id === 'string' && Number.isFinite(seconds) && seconds >= 0).slice(0, 50000).map(([id, seconds]) => [id, Math.floor(seconds)])) : {},
+      autoContinue: Boolean(data.autoContinue),
+      sortMode: ['library', 'title', 'artist', 'album', 'year', 'recently-added', 'most-played', 'duration'].includes(data.sortMode) ? data.sortMode : 'library'
     };
   } catch {
-    return { favorites: [], playlists: [], volume: 0.78, lastTrack: null, lastTime: 0, shuffle: false, repeatMode: 0, eqPreset: 'Flat', eqBands: [...EQ_PRESETS.Flat.bands], eqPreamp: 0, material: 'glass' };
+    return { favorites: [], playlists: [], smartPlaylists: [], volume: 0.78, lastTrack: null, lastTime: 0, shuffle: false, repeatMode: 0, eqPreset: 'Flat', eqBands: [...EQ_PRESETS.Flat.bands], eqPreamp: 0, material: 'glass', playHistory: [], playCounts: {}, addedAt: {}, listenSeconds: {}, autoContinue: false, sortMode: 'library' };
   }
 }
 
@@ -80,6 +111,7 @@ function saveAppState() {
     localStorage.setItem('luma-music-state', JSON.stringify({
       favorites: appState.favorites,
       playlists: appState.playlists,
+      smartPlaylists: appState.smartPlaylists,
       volume: appState.volume,
       lastTrack: appState.lastTrack,
       lastTime: appState.lastTime,
@@ -88,7 +120,13 @@ function saveAppState() {
       eqPreset: appState.eqPreset,
       eqBands: appState.eqBands,
       eqPreamp: appState.eqPreamp,
-      material: appState.material
+      material: appState.material,
+      playHistory: appState.playHistory.slice(0, 500),
+      playCounts: appState.playCounts,
+      addedAt: appState.addedAt,
+      listenSeconds: appState.listenSeconds,
+      autoContinue: appState.autoContinue,
+      sortMode: appState.sortMode
     }));
   } catch {
     toast('Pengaturan lokal tidak dapat disimpan.');
@@ -113,6 +151,8 @@ const CONTROL_ICON_PATHS = {
   'heart-filled': '<path d="M20.8 4.7a5.5 5.5 0 0 0-7.8 0L12 5.8l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.9-8.5a5.5 5.5 0 0 0-.1-7.8Z" fill="currentColor"/>',
   volume: '<path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>',
   queue: '<path d="M9 6h12"/><path d="M9 12h12"/><path d="M9 18h7"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/>',
+  'chevron-up': '<path d="m6 14 6-6 6 6"/>',
+  'chevron-down': '<path d="m6 10 6 6 6-6"/>',
   lyrics: '<path d="M8 5h12"/><path d="M8 9h12"/><path d="M8 13h8"/><path d="M4 5h.01"/><path d="M4 9h.01"/><path d="M4 13h.01"/><path d="M4 17h9"/>',
   equalizer: '<path d="M4 6v12"/><path d="M12 4v16"/><path d="M20 8v8"/><path d="M1.8 10h4.4"/><path d="M9.8 14h4.4"/><path d="M17.8 11h4.4"/>',
   fullscreen: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/>'
@@ -195,6 +235,281 @@ function allIndexes(tracks) {
   return tracks.map(track => library.tracks.indexOf(track)).filter(index => index >= 0);
 }
 
+function trackPlayCount(trackId) {
+  return Number(appState.playCounts[trackId]) || 0;
+}
+
+function normalizeSmartRule(rule) {
+  const field = SMART_PLAYLIST_FIELDS[rule?.field] ? rule.field : 'artist';
+  const config = SMART_PLAYLIST_FIELDS[field];
+  const operator = config.operators.some(([value]) => value === rule?.operator) ? rule.operator : config.operators[0][0];
+  let value = String(rule?.value ?? '').slice(0, 120);
+  if (config.type === 'number') {
+    const number = Number(value);
+    value = value.trim() && Number.isFinite(number) ? String(Math.max(0, Math.min(100000, number))) : '';
+  } else if (config.type === 'select') {
+    if (!config.options.some(([option]) => option === value)) value = config.options[0][0];
+  }
+  return { field, operator, value };
+}
+
+function smartRuleIsActive(rule) {
+  return rule.field === 'favorite' || String(rule.value ?? '').trim() !== '';
+}
+
+function latestPlayTimestampByTrack() {
+  const latest = new Map();
+  for (const item of appState.playHistory) {
+    if (!latest.has(item.id) || latest.get(item.id) < item.at) latest.set(item.id, item.at);
+  }
+  return latest;
+}
+
+function smartRuleMatches(track, rule, latestPlayed = null, now = Date.now()) {
+  const value = String(rule.value ?? '').trim();
+  const config = SMART_PLAYLIST_FIELDS[rule.field];
+  if (!config) return false;
+  if (rule.field !== 'favorite' && !value) return true;
+  const compareText = (actual) => {
+    const left = String(actual ?? '').trim().toLocaleLowerCase();
+    const right = value.toLocaleLowerCase();
+    if (rule.operator === 'is') return left === right;
+    if (rule.operator === 'not-contains') return !left.includes(right);
+    return left.includes(right);
+  };
+  const compareNumber = (actual) => {
+    const left = Number(actual);
+    const right = Number(value);
+    if (!Number.isFinite(right) || !Number.isFinite(left)) return false;
+    if (rule.operator === 'is') return left === right;
+    if (rule.operator === 'at-least') return left >= right;
+    if (rule.operator === 'at-most') return left <= right;
+    return false;
+  };
+  switch (rule.field) {
+    case 'favorite': return isFavorite(track.id) === (value === 'yes');
+    case 'artist': return compareText(track.artist || track.albumArtist);
+    case 'album': return compareText(track.album);
+    case 'genre': return compareText(track.genre);
+    case 'year': return compareNumber(Number(track.year) || 0);
+    case 'play-count': return compareNumber(trackPlayCount(track.id));
+    case 'last-played-days': {
+      const timestamp = latestPlayed?.get(track.id);
+      return Boolean(timestamp && now - timestamp <= Number(value) * 86400000);
+    }
+    case 'added-days': {
+      const timestamp = appState.addedAt[track.id];
+      return Boolean(timestamp && now - timestamp <= Number(value) * 86400000);
+    }
+    case 'duration-minutes': return compareNumber((Number(track.duration) || 0) / 60);
+    case 'bitrate-kbps': return compareNumber((Number(track.bitrate) || 0) / 1000);
+    default: return false;
+  }
+}
+
+function smartPlaylistTracks(playlist) {
+  if (!playlist || !Array.isArray(playlist.rules)) return [];
+  const activeRules = playlist.rules.map(normalizeSmartRule).filter(smartRuleIsActive);
+  if (!activeRules.length) return [...library.tracks];
+  const latestPlayed = latestPlayTimestampByTrack();
+  const now = Date.now();
+  return library.tracks.filter(track => playlist.match === 'any'
+    ? activeRules.some(rule => smartRuleMatches(track, rule, latestPlayed, now))
+    : activeRules.every(rule => smartRuleMatches(track, rule, latestPlayed, now)));
+}
+
+function renderSmartPlaylist(playlistId) {
+  const playlist = appState.smartPlaylists.find(item => item.id === playlistId);
+  if (!playlist) return pageHeading('Playlist pintar tidak ditemukan', 'KOLEKSI DINAMIS', 'Playlist ini mungkin telah dihapus.') + emptyState('Playlist tidak tersedia', 'Buat playlist pintar baru dari bagian Playlist Pintar.');
+  const tracks = filteredTracks(smartPlaylistTracks(playlist));
+  const activeRules = playlist.rules.map(normalizeSmartRule).filter(smartRuleIsActive);
+  const logicText = activeRules.length ? `${activeRules.length} aturan · ${playlist.match === 'any' ? 'salah satu aturan cocok' : 'semua aturan cocok'} · diperbarui otomatis` : 'Belum ada aturan aktif · seluruh koleksi ditampilkan';
+  const extra = `<div class="playlist-page-actions"><button class="secondary-button" data-action="edit-smart-playlist" data-id="${escapeHtml(playlist.id)}">Ubah aturan</button><button class="secondary-button danger-button" data-action="delete-smart-playlist" data-id="${escapeHtml(playlist.id)}">Hapus</button></div>`;
+  const heading = pageHeading(playlist.name, 'PLAYLIST PINTAR', logicText, extra);
+  if (!tracks.length) return heading + `<div class="empty-state smart-playlist-empty"><div class="empty-icon">${iconMarkup('equalizer', 24)}</div><h2>Belum ada lagu yang cocok</h2><p>Coba longgarkan aturan playlist ini, atau pilih kolom pencarian untuk menghapus filter.</p><button class="primary-button" data-action="edit-smart-playlist" data-id="${escapeHtml(playlist.id)}">Ubah aturan</button></div>`;
+  return heading + trackListMarkup(tracks, 'Lagu yang cocok', `${tracks.length} lagu saat ini`);
+}
+
+function makeSmartRule() {
+  return { field: 'artist', operator: 'contains', value: '' };
+}
+
+function smartRuleMarkup(rule, index) {
+  const config = SMART_PLAYLIST_FIELDS[rule.field] || SMART_PLAYLIST_FIELDS.artist;
+  const fieldOptions = Object.entries(SMART_PLAYLIST_FIELDS).map(([key, field]) => `<option value="${key}" ${key === rule.field ? 'selected' : ''}>${escapeHtml(field.label)}</option>`).join('');
+  const operators = config.operators.map(([key, label]) => `<option value="${key}" ${key === rule.operator ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('');
+  let valueMarkup;
+  if (config.type === 'select') {
+    valueMarkup = `<select data-smart-rule-value aria-label="Nilai aturan">${config.options.map(([key, label]) => `<option value="${key}" ${key === rule.value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}</select>`;
+  } else {
+    const isNumber = config.type === 'number';
+    const placeholder = rule.field === 'artist' ? 'Nama artis' : rule.field === 'album' ? 'Nama album' : rule.field === 'genre' ? 'Genre' : rule.field === 'year' ? 'Tahun' : rule.field === 'play-count' ? 'Kali' : rule.field === 'last-played-days' || rule.field === 'added-days' ? 'Hari' : rule.field === 'duration-minutes' ? 'Menit' : rule.field === 'bitrate-kbps' ? 'kb/s' : 'Nilai';
+    valueMarkup = `<input data-smart-rule-value type="${isNumber ? 'number' : 'text'}" ${isNumber ? 'min="0" max="100000" step="1"' : 'maxlength="120"'} value="${escapeHtml(rule.value)}" placeholder="${placeholder}" aria-label="Nilai aturan">`;
+  }
+  return `<div class="smart-rule-row" data-rule-index="${index}"><select data-smart-rule-field aria-label="Kolom aturan">${fieldOptions}</select><select data-smart-rule-operator aria-label="Kondisi aturan">${operators}</select>${valueMarkup}<button class="icon-button small smart-rule-remove" type="button" data-smart-rule-remove="${index}" aria-label="Hapus aturan" title="Hapus aturan">×</button></div>`;
+}
+
+function renderSmartPlaylistRules() {
+  const container = $('#smart-playlist-rules');
+  if (!container) return;
+  container.innerHTML = smartPlaylistDraftRules.map(smartRuleMarkup).join('');
+  updateSmartPlaylistPreviewCount();
+}
+
+function updateSmartPlaylistPreviewCount() {
+  const label = $('#smart-playlist-preview-count');
+  if (!label) return;
+  const activeRules = smartPlaylistDraftRules.map(normalizeSmartRule).filter(smartRuleIsActive);
+  label.textContent = activeRules.length ? `${activeRules.length} aturan aktif` : 'Tanpa aturan: semua lagu';
+}
+
+function openSmartPlaylistEditor(playlist = null) {
+  if (!playlist && appState.smartPlaylists.length >= 200) return toast('Maksimal 200 playlist pintar.');
+  editingSmartPlaylistId = playlist?.id || null;
+  $('#smart-playlist-dialog-title').textContent = playlist ? 'Ubah Playlist Pintar' : 'Playlist Pintar Baru';
+  $('#smart-playlist-name').value = playlist?.name || '';
+  $('#smart-playlist-match').value = playlist?.match === 'any' ? 'any' : 'all';
+  smartPlaylistDraftRules = (playlist?.rules || [makeSmartRule()]).map(normalizeSmartRule);
+  renderSmartPlaylistRules();
+  smartPlaylistDialog.showModal();
+  $('#smart-playlist-name').focus();
+}
+
+function saveSmartPlaylistFromDialog(event) {
+  event.preventDefault();
+  const name = $('#smart-playlist-name').value.trim().slice(0, 64);
+  if (!name) return toast('Beri nama untuk playlist pintar ini.');
+  if (appState.smartPlaylists.some(item => item.id !== editingSmartPlaylistId && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())) return toast('Nama playlist pintar itu sudah digunakan.');
+  const rules = smartPlaylistDraftRules.slice(0, 20).map(normalizeSmartRule);
+  const playlist = { id: editingSmartPlaylistId || `smart-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, name, match: $('#smart-playlist-match').value === 'any' ? 'any' : 'all', rules };
+  const existingIndex = appState.smartPlaylists.findIndex(item => item.id === playlist.id);
+  if (existingIndex >= 0) appState.smartPlaylists[existingIndex] = playlist;
+  else appState.smartPlaylists.push(playlist);
+  saveAppState();
+  smartPlaylistDialog.close();
+  editingSmartPlaylistId = null;
+  updateSidebar();
+  setView('smart-playlist', playlist.id);
+  toast(`Playlist pintar “${name}” disimpan.`);
+}
+
+function deleteSmartPlaylist(id) {
+  const playlist = appState.smartPlaylists.find(item => item.id === id);
+  if (!playlist) return;
+  if (!window.confirm(`Hapus playlist pintar “${playlist.name}”? File musik tidak akan dihapus.`)) return;
+  appState.smartPlaylists = appState.smartPlaylists.filter(item => item.id !== id);
+  viewHistory = viewHistory.filter(key => key !== `smart-playlist:${id}`);
+  historyPosition = Math.max(0, viewHistory.length - 1);
+  saveAppState();
+  setView('home');
+  toast(`Playlist pintar “${playlist.name}” dihapus.`);
+}
+
+function sortedTracks(tracks, mode = appState.sortMode) {
+  const copy = [...tracks];
+  const compareText = (a, b, key) => String(a[key] || '').localeCompare(String(b[key] || ''), undefined, { numeric: true, sensitivity: 'base' });
+  switch (mode) {
+    case 'title': return copy.sort((a, b) => compareText(a, b, 'title'));
+    case 'artist': return copy.sort((a, b) => compareText(a, b, 'artist') || compareText(a, b, 'title'));
+    case 'album': return copy.sort((a, b) => compareText(a, b, 'album') || (a.discNo - b.discNo) || (a.trackNo - b.trackNo));
+    case 'year': return copy.sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0) || compareText(a, b, 'title'));
+    case 'recently-added': return copy.sort((a, b) => (appState.addedAt[b.id] || 0) - (appState.addedAt[a.id] || 0));
+    case 'most-played': return copy.sort((a, b) => trackPlayCount(b.id) - trackPlayCount(a.id) || (appState.addedAt[b.id] || 0) - (appState.addedAt[a.id] || 0));
+    case 'duration': return copy.sort((a, b) => (a.duration || 0) - (b.duration || 0));
+    default: return copy;
+  }
+}
+
+function recentHistoryTracks(limit = 30) {
+  const seen = new Set();
+  const tracks = [];
+  for (const entry of appState.playHistory) {
+    if (seen.has(entry.id)) continue;
+    const track = getTrackById(entry.id);
+    if (!track) continue;
+    seen.add(entry.id);
+    tracks.push(track);
+    if (tracks.length >= limit) break;
+  }
+  return tracks;
+}
+
+function recordTrackStart(trackId) {
+  const now = Date.now();
+  appState.playCounts[trackId] = trackPlayCount(trackId) + 1;
+  appState.playHistory.unshift({ id: trackId, at: now });
+  appState.playHistory = appState.playHistory.slice(0, 500);
+  if (!appState.addedAt[trackId]) appState.addedAt[trackId] = now;
+  saveAppState();
+}
+
+function ensureAddedAtForLibrary() {
+  const fallback = Date.parse(library.scannedAt || '') || Date.now();
+  let changed = false;
+  for (const track of library.tracks) {
+    if (!Number.isFinite(appState.addedAt[track.id])) {
+      appState.addedAt[track.id] = fallback;
+      changed = true;
+    }
+  }
+  if (changed) saveAppState();
+}
+
+function localMixTracks(limit = 40) {
+  const tracks = library.tracks;
+  if (!tracks.length) return [];
+  const reference = getTrackById(activeTrackId) || recentHistoryTracks(1)[0] || [...tracks].sort((a, b) => trackPlayCount(b.id) - trackPlayCount(a.id))[0];
+  const recentIds = new Set(appState.playHistory.slice(0, 25).map(item => item.id));
+  const seed = localMixRefreshSeed;
+  return tracks.filter(track => track.id !== reference?.id).map(track => {
+    let score = 0;
+    if (isFavorite(track.id)) score += 4;
+    score += Math.min(4, trackPlayCount(track.id) * 0.35);
+    if (reference) {
+      if (track.artist && track.artist === reference.artist) score += 5;
+      if (track.albumArtist && track.albumArtist === reference.albumArtist) score += 3.5;
+      if (track.genre && reference.genre && track.genre.toLocaleLowerCase() === reference.genre.toLocaleLowerCase()) score += 3;
+      if (track.album && reference.album && track.album === reference.album) score += 1;
+    }
+    if (!recentIds.has(track.id)) score += 2.25;
+    if (!trackPlayCount(track.id)) score += 0.7;
+    const jitter = Math.abs(Math.sin((track.id.charCodeAt(0) || 1) * (seed + 1) * 0.137)) * 1.2;
+    return { track, score: score + jitter };
+  }).sort((a, b) => b.score - a.score).slice(0, limit).map(item => item.track);
+}
+
+function renderLocalMix() {
+  const tracks = localMixTracks();
+  const reference = getTrackById(activeTrackId) || recentHistoryTracks(1)[0];
+  const subtitle = reference ? `Dipilih dari artis, genre, favorit, dan riwayat lokal dekat dengan ${reference.artist}.` : 'Mix awal dari favorit, genre, dan lagu yang belum banyak diputar.';
+  const heading = pageHeading('Mix untukmu', 'LUMA PERSONAL MIX', subtitle, `<button class="secondary-button" data-action="refresh-local-mix">${iconMarkup('shuffle', 15)} Segarkan mix</button>`);
+  if (!tracks.length) return heading + emptyState('Belum cukup bahan untuk mix', 'Impor koleksi musik untuk membiarkan Luma menyusun mix lokal.');
+  const indexIds = escapeHtml(tracks.map(track => track.id).join(','));
+  return heading + `<section class="local-mix-hero"><div class="local-mix-orb">${iconMarkup('equalizer', 38)}</div><div class="local-mix-copy"><span class="eyebrow">DIBUAT DI PERANGKAT INI</span><h2>Favorit lama, temuan baru.</h2><p>Luma menyusun urutan dari kebiasaan mendengarkanmu. Tidak ada data yang dikirim ke server.</p><button class="primary-button" data-action="play-current-list" data-list-ids="${indexIds}">${iconMarkup('play', 15)} Putar mix</button></div></section>${trackListMarkup(tracks, 'Pilihan mix', `${tracks.length} lagu · diperbarui secara lokal`)}`;
+}
+
+function renderLumaReplay() {
+  const now = Date.now();
+  const weekAgo = now - 7 * 86400000;
+  const monthAgo = now - 30 * 86400000;
+  const lastWeek = appState.playHistory.filter(item => item.at >= weekAgo && getTrackById(item.id));
+  const lastMonth = appState.playHistory.filter(item => item.at >= monthAgo && getTrackById(item.id));
+  const topTracks = sortedTracks(library.tracks, 'most-played').filter(track => trackPlayCount(track.id) > 0).slice(0, 5);
+  const artistCounts = new Map();
+  for (const track of library.tracks) artistCounts.set(track.artist || 'Artis tidak diketahui', (artistCounts.get(track.artist || 'Artis tidak diketahui') || 0) + trackPlayCount(track.id));
+  const topArtist = [...artistCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const totalSeconds = Object.values(appState.listenSeconds).reduce((sum, seconds) => sum + (Number(seconds) || 0), 0);
+  const cards = [
+    ['Sesi pemutaran', String(Object.values(appState.playCounts).reduce((sum, count) => sum + (Number(count) || 0), 0)), 'Total mulai putar yang tercatat'],
+    ['7 hari terakhir', String(lastWeek.length), 'Pemutaran yang dimulai'],
+    ['30 hari terakhir', String(lastMonth.length), 'Pemutaran yang dimulai'],
+    ['Waktu mendengarkan', `${Math.floor(totalSeconds / 3600)}j ${Math.floor((totalSeconds % 3600) / 60)}m`, 'Perkiraan waktu aktif audio']
+  ];
+  const artistCard = topArtist && topArtist[1] ? `<section class="replay-top-artist"><span class="eyebrow">ARTIS PALING SERING DIPUTAR</span><h2>${escapeHtml(topArtist[0])}</h2><p>${topArtist[1]} kali mulai diputar dalam statistik lokal.</p></section>` : '';
+  const topTrackSection = topTracks.length ? trackListMarkup(topTracks, 'Lagu yang paling sering diputar', 'Berdasarkan jumlah sesi pemutaran yang dimulai') : emptyState('Statistik sedang dimulai', 'Putar beberapa lagu untuk membangun Replay milikmu.');
+  return pageHeading('Luma Replay', 'STATISTIK PRIBADI', 'Ringkasan kebiasaan mendengarkan yang hanya tersimpan di perangkatmu.') + `<section class="replay-grid">${cards.map(([label, value, detail]) => `<article class="replay-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(detail)}</small></article>`).join('')}</section>${artistCard}${topTrackSection}`;
+}
+
 function indexesFromIdList(value) {
   return String(value || '').split(',').map(id => library.tracks.findIndex(track => track.id === id)).filter(index => index >= 0);
 }
@@ -207,6 +522,8 @@ function currentViewTracks() {
     const playlist = appState.playlists.find(item => item.name === currentPlaylist);
     const ids = playlist?.ids || [];
     tracks = ids.map(getTrackById).filter(Boolean);
+  } else if (currentView === 'smart-playlist' && currentSmartPlaylistId) {
+    tracks = smartPlaylistTracks(appState.smartPlaylists.find(item => item.id === currentSmartPlaylistId));
   } else if (currentView === 'album-detail' && currentAlbumKey) {
     tracks = albumGroups(library.tracks).find(item => item.key === currentAlbumKey)?.tracks || [];
   } else if (currentView === 'artist-detail' && currentArtistName) {
@@ -222,6 +539,9 @@ function updateSidebar() {
   $('#settings-folder').textContent = library.folder || 'Belum ada folder musik yang dipilih.';
   playlistNav.innerHTML = appState.playlists.map(playlist => `
     <button class="playlist-item ${currentView === 'playlist' && currentPlaylist === playlist.name ? 'active' : ''}" data-playlist="${escapeHtml(playlist.name)}" title="${escapeHtml(playlist.name)}"><span>♫</span><span>${escapeHtml(playlist.name)}</span></button>
+  `).join('');
+  smartPlaylistNav.innerHTML = appState.smartPlaylists.map(playlist => `
+    <button class="playlist-item smart-playlist-item ${currentView === 'smart-playlist' && currentSmartPlaylistId === playlist.id ? 'active' : ''}" data-smart-playlist="${escapeHtml(playlist.id)}" title="${escapeHtml(playlist.name)}"><span>${iconMarkup('equalizer', 14)}</span><span>${escapeHtml(playlist.name)}</span></button>
   `).join('');
   $$('.nav-item').forEach(button => {
     button.classList.toggle('active', button.dataset.view === currentView);
@@ -280,11 +600,13 @@ function albumCard(group, index, artistMode = false) {
 }
 
 function trackListMarkup(tracks, title = 'Daftar lagu', subtitle = '', playlistMode = false) {
-  if (!tracks.length) return `<div class="track-section"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}</div></div>${emptyState(searchInput.value ? 'Tidak ditemukan' : 'Belum ada lagu', searchInput.value ? 'Coba kata kunci lain atau hapus pencarian.' : 'Impor folder musik untuk melihat lagu di sini.')}</div>`;
+  const sortableView = ['songs', 'favorites', 'playlist', 'smart-playlist'].includes(currentView);
+  const displayTracks = sortableView ? sortedTracks(tracks) : tracks;
+  if (!displayTracks.length) return `<div class="track-section"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}</div></div>${emptyState(searchInput.value ? 'Tidak ditemukan' : 'Belum ada lagu', searchInput.value ? 'Coba kata kunci lain atau hapus pencarian.' : 'Impor folder musik untuk melihat lagu di sini.')}</div>`;
 
-  const indexes = allIndexes(tracks);
-  const listIds = escapeHtml(tracks.map(track => track.id).join(','));
-  const rows = tracks.map((track, visibleIndex) => {
+  const indexes = allIndexes(displayTracks);
+  const listIds = escapeHtml(displayTracks.map(track => track.id).join(','));
+  const rows = displayTracks.map((track, visibleIndex) => {
     const index = indexes[visibleIndex];
     const playing = track.id === activeTrackId;
     const trackNo = track.trackNo ? String(track.trackNo).padStart(2, '0') : String(visibleIndex + 1).padStart(2, '0');
@@ -296,13 +618,15 @@ function trackListMarkup(tracks, title = 'Daftar lagu', subtitle = '', playlistM
       <td><div class="track-actions">${favoriteButton(track.id)}${playlistMode ? `<button class="row-action" data-action="remove-playlist-track" data-id="${escapeHtml(track.id)}" title="Hapus dari playlist" aria-label="Hapus dari playlist">−</button>` : `<button class="row-action" data-action="add-playlist" data-id="${escapeHtml(track.id)}" title="Tambah ke playlist" aria-label="Tambah ke playlist">＋</button>`}<span class="duration-cell" title="${escapeHtml([track.bitrate ? `${Math.round(track.bitrate / 1000)} kb/s` : '', track.sampleRate ? `${(track.sampleRate / 1000).toFixed(1)} kHz` : '', track.bitsPerSample ? `${track.bitsPerSample}-bit` : '', track.lossless === true ? 'Lossless' : ''].filter(Boolean).join(' · '))}">${formatTime(track.duration)}</span></div></td>
     </tr>`;
   }).join('');
-  return `<div class="track-section"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : `<p>${tracks.length} lagu</p>`}</div><button class="subtle-button" data-action="play-current-list" data-list-ids="${listIds}">Putar semua ↗</button></div><table class="track-table"><thead><tr><th>#</th><th>JUDUL</th><th>ALBUM</th><th>TAHUN</th><th class="align-right">DURASI</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const sortControl = sortableView ? `<label class="sort-control"><span>Urutkan</span><select id="track-sort" aria-label="Urutkan lagu"><option value="library" ${appState.sortMode === 'library' ? 'selected' : ''}>Urutan koleksi</option><option value="title" ${appState.sortMode === 'title' ? 'selected' : ''}>Judul</option><option value="artist" ${appState.sortMode === 'artist' ? 'selected' : ''}>Artis</option><option value="album" ${appState.sortMode === 'album' ? 'selected' : ''}>Album</option><option value="year" ${appState.sortMode === 'year' ? 'selected' : ''}>Tahun terbaru</option><option value="recently-added" ${appState.sortMode === 'recently-added' ? 'selected' : ''}>Baru ditambahkan</option><option value="most-played" ${appState.sortMode === 'most-played' ? 'selected' : ''}>Paling sering diputar</option><option value="duration" ${appState.sortMode === 'duration' ? 'selected' : ''}>Durasi</option></select></label>` : '';
+  return `<div class="track-section"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : `<p>${displayTracks.length} lagu</p>`}</div><div class="track-section-tools">${sortControl}<button class="subtle-button" data-action="play-current-list" data-list-ids="${listIds}">${iconMarkup('play', 14)} Putar semua</button></div></div><table class="track-table"><thead><tr><th>#</th><th>JUDUL</th><th>ALBUM</th><th>TAHUN</th><th class="align-right">DURASI</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderHome() {
   const tracks = filteredTracks(library.tracks);
   const albums = albumGroups(tracks).slice(0, 5);
-  const recentlyChanged = [...tracks].sort((a, b) => (b.mtimeMs || 0) - (a.mtimeMs || 0)).slice(0, 8);
+  const recentlyAdded = [...tracks].sort((a, b) => (appState.addedAt[b.id] || 0) - (appState.addedAt[a.id] || 0)).slice(0, 8);
+  const recentlyPlayed = recentHistoryTracks(8).filter(track => tracks.some(item => item.id === track.id));
   const hasLibrary = library.tracks.length > 0;
   const lastTrack = getTrackById(appState.lastTrack);
   const heading = `<div class="home-heading"><div><span class="eyebrow">PERPUSTAKAAN LOKAL</span><h1>Beranda</h1><p>Musik yang tersimpan di perangkatmu.</p></div><div class="home-heading-actions"><button class="secondary-button" data-action="show-songs">Semua lagu</button>${hasLibrary ? `<button class="primary-button" data-action="play-current-list">${iconMarkup('play', 15)}<span class="button-label">Putar semua</span></button>` : `<button class="primary-button" data-action="import-folder">＋ Pilih folder</button>`}</div></div>`;
@@ -311,8 +635,10 @@ function renderHome() {
   }
   const continueCard = lastTrack ? `<section class="continue-panel"><div class="continue-art">${lastTrack.cover ? `<img src="${escapeHtml(lastTrack.cover)}" alt="">` : '<span>♫</span>'}</div><div class="continue-copy"><span class="small-label">TERAKHIR DIPUTAR</span><strong>${escapeHtml(lastTrack.title)}</strong><span>${escapeHtml(lastTrack.artist)} · ${escapeHtml(lastTrack.album)}</span></div><button class="play-button continue-play" data-action="resume-last" title="Putar lagu terakhir" aria-label="Putar lagu terakhir">${iconMarkup('play', 18)}</button></section>` : '';
   const albumSection = albums.length ? `<div class="section-heading"><div><h2>Album</h2><p>Kelompokkan berdasarkan album di koleksimu</p></div><button class="subtle-button" data-action="show-albums">Lihat semua →</button></div><div class="featured-grid">${albums.map((album, i) => albumCard(album, i)).join('')}</div>` : '';
-  const recentSection = recentlyChanged.length ? trackListMarkup(recentlyChanged, 'File yang baru diubah', 'Diurutkan berdasarkan waktu modifikasi file') : '';
-  return heading + continueCard + albumSection + recentSection;
+  const mixBanner = `<section class="home-mix-banner"><div class="home-mix-symbol">${iconMarkup('equalizer', 27)}</div><div><span class="eyebrow">LUMA PERSONAL MIX</span><h2>Putar sesuai seleramu</h2><p>Mix dari favorit, genre, dan riwayat lokal.</p></div><button class="primary-button" data-action="open-smart-mix">Dengarkan mix ${iconMarkup('next', 14)}</button></section>`;
+  const recentAddedSection = recentlyAdded.length ? trackListMarkup(recentlyAdded, 'Baru ditambahkan', 'Berdasarkan waktu pertama kali masuk ke perpustakaan') : '';
+  const recentPlayedSection = recentlyPlayed.length ? trackListMarkup(recentlyPlayed, 'Baru diputar', 'Lagu terakhir yang kamu dengarkan') : '';
+  return heading + continueCard + mixBanner + albumSection + recentAddedSection + recentPlayedSection;
 }
 function renderAlbumDetail(key) {
   const album = albumGroups(library.tracks).find(item => item.key === key);
@@ -518,6 +844,19 @@ function renderPage() {
   } else if (currentView === 'favorites') {
     const tracks = filteredTracks(library.tracks.filter(track => isFavorite(track.id)));
     content.innerHTML = pageHeading('Favorit', 'KOLEKSI PRIBADI', 'Lagu yang ingin selalu dekat.') + trackListMarkup(tracks, 'Lagu favorit');
+  } else if (currentView === 'recently-added') {
+    const tracks = sortedTracks(filteredTracks(library.tracks), 'recently-added');
+    content.innerHTML = pageHeading('Baru ditambahkan', 'KOLEKSI PINTAR', 'Lagu yang baru masuk ke perpustakaan lokalmu.') + trackListMarkup(tracks, 'Baru ditambahkan');
+  } else if (currentView === 'recently-played') {
+    const tracks = filteredTracks(recentHistoryTracks(200));
+    content.innerHTML = pageHeading('Baru diputar', 'RIWAYAT LOKAL', 'Lagu terbaru yang mulai kamu dengarkan.') + trackListMarkup(tracks, 'Riwayat pemutaran');
+  } else if (currentView === 'most-played') {
+    const tracks = sortedTracks(filteredTracks(library.tracks), 'most-played').filter(track => trackPlayCount(track.id) > 0);
+    content.innerHTML = pageHeading('Paling sering diputar', 'KOLEKSI PINTAR', 'Disusun berdasarkan jumlah sesi pemutaran lokal.') + trackListMarkup(tracks, 'Paling sering diputar');
+  } else if (currentView === 'smart-mix') {
+    content.innerHTML = renderLocalMix();
+  } else if (currentView === 'luma-replay') {
+    content.innerHTML = renderLumaReplay();
   } else if (currentView === 'now-playing') {
     content.innerHTML = renderNowPlaying();
   } else if (currentView === 'album-detail') {
@@ -527,8 +866,10 @@ function renderPage() {
   } else if (currentView === 'playlist') {
     const playlist = appState.playlists.find(item => item.name === currentPlaylist);
     const tracks = filteredTracks((playlist?.ids || []).map(getTrackById).filter(Boolean));
-    const extra = `<button class="secondary-button" data-action="delete-playlist">Hapus playlist</button>`;
+    const extra = `<div class="playlist-page-actions"><button class="secondary-button" data-action="rename-playlist">Ubah nama</button><button class="secondary-button" data-action="export-playlist">Ekspor M3U</button><button class="secondary-button danger-button" data-action="delete-playlist">Hapus playlist</button></div>`;
     content.innerHTML = pageHeading(currentPlaylist || 'Playlist', 'PLAYLIST PRIBADI', `${tracks.length} lagu`, extra) + trackListMarkup(tracks, 'Isi playlist', '', true);
+  } else if (currentView === 'smart-playlist') {
+    content.innerHTML = renderSmartPlaylist(currentSmartPlaylistId);
   } else {
     currentView = 'home';
     content.innerHTML = renderHome();
@@ -551,10 +892,12 @@ function setView(view, context = null, pushHistory = true) {
   currentPlaylist = view === 'playlist' ? context : null;
   currentAlbumKey = view === 'album-detail' ? context : null;
   currentArtistName = view === 'artist-detail' ? context : null;
+  currentSmartPlaylistId = view === 'smart-playlist' ? context : null;
   if (pushHistory) {
     const next = view === 'playlist' ? `playlist:${context}`
       : view === 'album-detail' ? `album:${context}`
-      : view === 'artist-detail' ? `artist:${context}` : view;
+      : view === 'artist-detail' ? `artist:${context}`
+      : view === 'smart-playlist' ? `smart-playlist:${context}` : view;
     const last = viewHistory[historyPosition];
     if (last !== next) {
       viewHistory = viewHistory.slice(0, historyPosition + 1);
@@ -574,6 +917,7 @@ function navigateHistory(delta) {
   if (key.startsWith('playlist:')) setView('playlist', key.slice(9), false);
   else if (key.startsWith('album:')) setView('album-detail', key.slice(6), false);
   else if (key.startsWith('artist:')) setView('artist-detail', key.slice(7), false);
+  else if (key.startsWith('smart-playlist:')) setView('smart-playlist', key.slice(15), false);
   else setView(key, null, false);
 }
 
@@ -660,7 +1004,11 @@ function playTrackAtQueuePosition(restoreTime = 0) {
   if (queuePosition < 0 || queuePosition >= playQueue.length) return;
   const track = library.tracks[playQueue[queuePosition]];
   if (!track) return;
+  accumulateListeningTime(true);
+  lastStatsWallClock = 0;
   activeTrackId = track.id;
+  countedPlaybackStartId = null;
+  lastStatsWallClock = Date.now();
   audio.pause();
   audio.src = track.src;
   audio.load();
@@ -834,6 +1182,119 @@ function removeTrackFromCurrentPlaylist(trackId) {
   toast(track ? `“${track.title}” dihapus dari playlist.` : 'Lagu dihapus dari playlist.');
 }
 
+
+function renameCurrentPlaylist() {
+  if (!currentPlaylist) return;
+  const playlist = appState.playlists.find(item => item.name === currentPlaylist);
+  if (!playlist) return;
+  const nextName = window.prompt('Nama playlist baru:', playlist.name);
+  if (nextName === null) return;
+  const name = nextName.trim();
+  if (!name) return toast('Nama playlist tidak boleh kosong.');
+  if (appState.playlists.some(item => item !== playlist && item.name.toLocaleLowerCase() === name.toLocaleLowerCase())) return toast('Playlist dengan nama itu sudah ada.');
+  const previous = playlist.name;
+  playlist.name = name;
+  currentPlaylist = name;
+  viewHistory = viewHistory.map(key => key === `playlist:${previous}` ? `playlist:${name}` : key);
+  saveAppState();
+  renderPage();
+  toast(`Playlist diubah menjadi “${name}”.`);
+}
+
+async function importPlaylistM3U() {
+  if (!library.folder || !library.tracks.length) return toast('Impor folder musik dahulu sebelum mengimpor playlist.');
+  try {
+    const result = await window.lumaMusic.importPlaylistM3U();
+    if (result?.canceled) return;
+    if (!result.trackIds?.length) return toast('Tidak ada lagu playlist yang cocok dengan perpustakaan lokal ini.');
+    let name = result.name || 'Playlist impor';
+    let suffix = 2;
+    while (appState.playlists.some(item => item.name.toLocaleLowerCase() === name.toLocaleLowerCase())) name = `${result.name || 'Playlist impor'} (${suffix++})`;
+    appState.playlists.push({ name, ids: result.trackIds });
+    saveAppState();
+    renderPage();
+    setView('playlist', name);
+    toast(`Playlist “${name}” diimpor: ${result.trackIds.length} lagu.`);
+  } catch (error) {
+    toast(error?.message || 'Impor playlist M3U gagal.');
+  }
+}
+
+async function exportCurrentPlaylistM3U() {
+  if (!currentPlaylist) return;
+  const playlist = appState.playlists.find(item => item.name === currentPlaylist);
+  if (!playlist) return;
+  try {
+    const result = await window.lumaMusic.exportPlaylistM3U({ name: playlist.name, trackIds: playlist.ids });
+    if (result?.canceled) return;
+    toast(`Playlist diekspor: ${result.count} lagu.`);
+  } catch (error) {
+    toast(error?.message || 'Ekspor playlist M3U gagal.');
+  }
+}
+
+function startSleepTimer() {
+  const choice = $('#sleep-timer-select').value;
+  if (sleepTimerInterval) window.clearInterval(sleepTimerInterval);
+  sleepTimerInterval = null;
+  sleepTimerEndsAt = 0;
+  sleepTimerEndOfTrack = false;
+  if (choice === 'off') {
+    $('#sleep-timer-status').textContent = 'Timer tidur mati.';
+    toast('Timer tidur dimatikan.');
+    return;
+  }
+  if (choice === 'end-track') {
+    if (!activeTrackId) return toast('Putar lagu terlebih dahulu untuk memakai timer akhir lagu.');
+    sleepTimerEndOfTrack = true;
+    $('#sleep-timer-status').textContent = 'Pemutaran akan berhenti saat lagu ini selesai.';
+    toast('Timer tidur aktif: berhenti saat lagu selesai.');
+    return;
+  }
+  const minutes = Number(choice);
+  if (!Number.isFinite(minutes) || minutes < 1 || minutes > 720) return toast('Durasi timer tidak valid.');
+  sleepTimerEndsAt = Date.now() + minutes * 60 * 1000;
+  const update = () => {
+    const remaining = Math.max(0, sleepTimerEndsAt - Date.now());
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    $('#sleep-timer-status').textContent = remaining ? `Pemutaran berhenti dalam ${mins}:${String(secs).padStart(2, '0')}.` : 'Timer selesai.';
+    if (remaining <= 0) {
+      window.clearInterval(sleepTimerInterval);
+      sleepTimerInterval = null;
+      sleepTimerEndsAt = 0;
+      audio.pause();
+      toast('Timer tidur selesai. Pemutaran dihentikan.');
+    }
+  };
+  update();
+  sleepTimerInterval = window.setInterval(update, 1000);
+  toast(`Timer tidur aktif: ${minutes} menit.`);
+}
+
+function maybeAutoContinueLocal() {
+  if (!appState.autoContinue || !library.tracks.length || !activeTrackId) return false;
+  const mix = localMixTracks(30);
+  if (!mix.length) return false;
+  const indexes = allIndexes(mix);
+  if (!indexes.length) return false;
+  playQueue = isShuffle ? [indexes[0], ...shuffleArray(indexes.slice(1))] : indexes;
+  queuePosition = 0;
+  playTrackAtQueuePosition();
+  toast('Melanjutkan dengan mix serupa dari perpustakaan lokal.');
+  return true;
+}
+
+function accumulateListeningTime(force = false) {
+  const now = Date.now();
+  if (!activeTrackId || (!force && audio.paused) || !lastStatsWallClock) {
+    lastStatsWallClock = audio.paused ? 0 : now;
+    return;
+  }
+  const elapsed = Math.max(0, Math.min(5, (now - lastStatsWallClock) / 1000));
+  appState.listenSeconds[activeTrackId] = (Number(appState.listenSeconds[activeTrackId]) || 0) + elapsed;
+  lastStatsWallClock = now;
+}
 function deleteCurrentPlaylist() {
   if (!currentPlaylist) return;
   const name = currentPlaylist;
@@ -913,6 +1374,8 @@ function setRepeatMode(mode, announce = true) {
 function handleMenuCommand(command) {
   if (command === 'choose-folder') return chooseFolder();
   if (command === 'rescan-library') return rescanFolder();
+  if (command === 'import-playlist-m3u') return importPlaylistM3U();
+  if (command === 'open-sleep-timer') { settingsDialog.showModal(); $('#sleep-timer-select').focus(); return; }
   if (command === 'open-settings') return settingsDialog.showModal();
   if (command === 'toggle-playback') return togglePlayback();
   if (command === 'previous-track') return previousTrack();
@@ -943,11 +1406,12 @@ function handleMenuCommand(command) {
   if (command === 'navigate-back') return navigateHistory(-1);
   if (command === 'navigate-forward') return navigateHistory(1);
   if (command === 'create-playlist') return createPlaylist();
+  if (command === 'create-smart-playlist') return openSmartPlaylistEditor();
   if (command === 'play-library') { const indexes = library.tracks.map((_track, index) => index); return playIndexes(indexes, indexes[0]); }
   if (command === 'clear-upcoming-queue') return clearUpcomingQueue();
   if (command === 'toggle-material') return applyMaterialMode(appState.material === 'glass' ? 'solid' : 'glass');
   if (command === 'show-shortcuts') return settingsDialog.showModal();
-  if (command === 'show-about') return toast('Luma Music 1.1.1 · Open source · Lisensi MIT.');
+  if (command === 'show-about') return toast('Luma Music 2.0.0 · Open source · Lisensi MIT.');
 }
 
 function playAlbumKey(key) {
@@ -1211,10 +1675,28 @@ function renderQueue() {
     $('#queue-list').innerHTML = '<div class="empty-state"><div class="empty-icon">♫</div><h2>Antrean masih kosong</h2><p>Pilih lagu dari perpustakaan untuk mulai memutar musik.</p></div>';
     return;
   }
-  $('#queue-list').innerHTML = queueTracks.map(({ track, pos }) => `
-    <div class="queue-row ${track.id === activeTrackId ? 'active' : ''}" data-action="play-queue-position" data-pos="${pos}" tabindex="0" role="button" aria-label="Putar ${escapeHtml(track.title)}">
-      ${coverMarkup(track)}<div class="track-text"><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artist)}</span></div><time>${formatTime(track.duration)}</time><button class="queue-remove" data-action="remove-queue-position" data-pos="${pos}" title="Hapus dari antrean" aria-label="Hapus ${escapeHtml(track.title)} dari antrean">×</button>
-    </div>`).join('');
+  $('#queue-list').innerHTML = queueTracks.map(({ track, pos }) => {
+    const current = track.id === activeTrackId;
+    const canMoveUp = queuePosition < 0 ? pos > 0 : pos > queuePosition + 1;
+    const canMoveDown = pos < playQueue.length - 1 && (queuePosition < 0 || pos > queuePosition);
+    return `<div class="queue-row ${current ? 'active' : ''}" data-action="play-queue-position" data-pos="${pos}" tabindex="0" role="button" aria-label="Putar ${escapeHtml(track.title)}">
+      ${coverMarkup(track)}<div class="track-text"><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artist)}</span></div><time>${formatTime(track.duration)}</time><div class="queue-row-actions"><button class="queue-reorder" data-action="move-queue-position" data-direction="-1" data-pos="${pos}" ${!canMoveUp ? 'disabled' : ''} title="Pindah ke atas" aria-label="Pindah ${escapeHtml(track.title)} ke atas">${iconMarkup('chevron-up', 14)}</button><button class="queue-reorder" data-action="move-queue-position" data-direction="1" data-pos="${pos}" ${!canMoveDown ? 'disabled' : ''} title="Pindah ke bawah" aria-label="Pindah ${escapeHtml(track.title)} ke bawah">${iconMarkup('chevron-down', 14)}</button><button class="queue-remove" data-action="remove-queue-position" data-pos="${pos}" title="Hapus dari antrean" aria-label="Hapus ${escapeHtml(track.title)} dari antrean">×</button></div>
+    </div>`;
+  }).join('');
+}
+
+function moveQueuePosition(position, direction) {
+  if (!Number.isInteger(position) || !Number.isInteger(direction) || ![-1, 1].includes(direction)) return;
+  const target = position + direction;
+  if (position < 0 || target < 0 || target >= playQueue.length || position >= playQueue.length) return;
+  if (queuePosition >= 0 && (position <= queuePosition || target <= queuePosition)) {
+    toast('Lagu yang sedang diputar tetap di posisi aktif; susun lagu berikutnya.');
+    return;
+  }
+  [playQueue[position], playQueue[target]] = [playQueue[target], playQueue[position]];
+  renderQueue();
+  renderPage();
+  saveAppState();
 }
 
 function removeQueuePosition(position) {
@@ -1260,6 +1742,13 @@ function replaceLibrary(data) {
   const oldQueueIds = playQueue.map(index => library.tracks[index]?.id).filter(Boolean);
   const oldActiveId = activeTrackId;
   library = hydrateLibrary(data);
+  const liveIds = new Set(library.tracks.map(track => track.id));
+  const timestamp = Date.now();
+  for (const track of library.tracks) if (!Number.isFinite(appState.addedAt[track.id])) appState.addedAt[track.id] = timestamp;
+  appState.addedAt = Object.fromEntries(Object.entries(appState.addedAt).filter(([id]) => liveIds.has(id)));
+  appState.playHistory = appState.playHistory.filter(entry => liveIds.has(entry.id));
+  appState.playCounts = Object.fromEntries(Object.entries(appState.playCounts).filter(([id]) => liveIds.has(id)));
+  appState.listenSeconds = Object.fromEntries(Object.entries(appState.listenSeconds).filter(([id]) => liveIds.has(id)));
   const newIndexes = new Map(library.tracks.map((track, index) => [track.id, index]));
   playQueue = oldQueueIds.map(id => newIndexes.get(id)).filter(index => index !== undefined);
   if (oldActiveId && newIndexes.has(oldActiveId)) {
@@ -1340,6 +1829,12 @@ content.addEventListener('click', event => {
   if (action === 'open-artist') return setView('artist-detail', actionNode.dataset.artist);
   if (action === 'play-artist') return playArtist(actionNode.dataset.artist);
   if (action === 'delete-playlist') return deleteCurrentPlaylist();
+  if (action === 'rename-playlist') return renameCurrentPlaylist();
+  if (action === 'export-playlist') return exportCurrentPlaylistM3U();
+  if (action === 'edit-smart-playlist') return openSmartPlaylistEditor(appState.smartPlaylists.find(item => item.id === actionNode.dataset.id));
+  if (action === 'delete-smart-playlist') return deleteSmartPlaylist(actionNode.dataset.id);
+  if (action === 'open-smart-mix') { setView('smart-mix'); return; }
+  if (action === 'refresh-local-mix') { localMixRefreshSeed += 1; setView('smart-mix'); toast('Mix lokal diperbarui.'); return; }
 });
 
 content.addEventListener('input', event => {
@@ -1351,6 +1846,12 @@ content.addEventListener('input', event => {
   }
 });
 content.addEventListener('change', event => {
+  if (event.target.matches('#track-sort')) {
+    appState.sortMode = event.target.value;
+    saveAppState();
+    renderPage();
+    return;
+  }
   if (event.target.matches('#now-view-seek-slider')) {
     if (Number.isFinite(audio.duration) && audio.duration > 0) audio.currentTime = audio.duration * (Number(event.target.value) / 1000);
     isSeeking = false;
@@ -1389,7 +1890,58 @@ playlistNav.addEventListener('click', event => {
   const button = event.target.closest('[data-playlist]');
   if (button) setView('playlist', button.dataset.playlist);
 });
+smartPlaylistNav.addEventListener('click', event => {
+  const button = event.target.closest('[data-smart-playlist]');
+  if (button) setView('smart-playlist', button.dataset.smartPlaylist);
+});
 $('#create-playlist').addEventListener('click', () => createPlaylist());
+$('#create-smart-playlist').addEventListener('click', () => openSmartPlaylistEditor());
+$('#close-smart-playlist').addEventListener('click', () => smartPlaylistDialog.close());
+$('#cancel-smart-playlist').addEventListener('click', () => smartPlaylistDialog.close());
+$('#smart-playlist-add-rule').addEventListener('click', () => {
+  if (smartPlaylistDraftRules.length >= 20) return toast('Maksimal 20 aturan per playlist pintar.');
+  smartPlaylistDraftRules.push(makeSmartRule());
+  renderSmartPlaylistRules();
+  const lastRow = $('#smart-playlist-rules').querySelector('.smart-rule-row:last-child');
+  const last = lastRow?.querySelector('[data-smart-rule-field]');
+  last?.focus();
+});
+$('#smart-playlist-rules').addEventListener('change', event => {
+  const row = event.target.closest('[data-rule-index]');
+  if (!row) return;
+  const index = Number(row.dataset.ruleIndex);
+  const rule = smartPlaylistDraftRules[index];
+  if (!rule) return;
+  if (event.target.matches('[data-smart-rule-field]')) {
+    const field = event.target.value;
+    const next = normalizeSmartRule({ field, value: SMART_PLAYLIST_FIELDS[field]?.type === 'select' ? SMART_PLAYLIST_FIELDS[field].options[0][0] : '' });
+    smartPlaylistDraftRules[index] = next;
+    renderSmartPlaylistRules();
+  } else if (event.target.matches('[data-smart-rule-operator]')) {
+    rule.operator = event.target.value;
+    renderSmartPlaylistRules();
+  } else if (event.target.matches('[data-smart-rule-value]')) {
+    rule.value = event.target.value;
+    updateSmartPlaylistPreviewCount();
+  }
+});
+$('#smart-playlist-rules').addEventListener('input', event => {
+  const row = event.target.closest('[data-rule-index]');
+  if (!row || !event.target.matches('[data-smart-rule-value]')) return;
+  const rule = smartPlaylistDraftRules[Number(row.dataset.ruleIndex)];
+  if (rule) { rule.value = event.target.value; updateSmartPlaylistPreviewCount(); }
+});
+$('#smart-playlist-rules').addEventListener('click', event => {
+  const button = event.target.closest('[data-smart-rule-remove]');
+  if (!button) return;
+  smartPlaylistDraftRules.splice(Number(button.dataset.smartRuleRemove), 1);
+  renderSmartPlaylistRules();
+});
+$('#smart-playlist-form').addEventListener('submit', saveSmartPlaylistFromDialog);
+$('#smart-playlist-match').addEventListener('change', updateSmartPlaylistPreviewCount);
+$('#import-playlist').addEventListener('click', importPlaylistM3U);
+$('#autoplay-local').addEventListener('change', event => { appState.autoContinue = Boolean(event.target.checked); saveAppState(); toast(appState.autoContinue ? 'Lanjutkan dengan lagu serupa aktif.' : 'Lanjutkan otomatis dimatikan.'); });
+$('#sleep-timer-start').addEventListener('click', startSleepTimer);
 $('#import-folder').addEventListener('click', chooseFolder);
 $('#rescan-folder').addEventListener('click', rescanFolder);
 $('#play-button').addEventListener('click', togglePlayback);
@@ -1436,6 +1988,7 @@ $('#seek-slider').addEventListener('change', () => {
   isSeeking = false;
 });
 audio.addEventListener('timeupdate', () => {
+  accumulateListeningTime();
   if (Number.isFinite(audio.duration) && audio.duration > 0) {
     if (!isSeeking) $('#seek-slider').value = String(Math.round(audio.currentTime / audio.duration * 1000));
     $('#current-time').textContent = formatTime(audio.currentTime);
@@ -1457,13 +2010,21 @@ audio.addEventListener('timeupdate', () => {
   }
 });
 audio.addEventListener('play', () => {
-  setPlayControl($('#play-button'), false);
+  lastStatsWallClock = Date.now();
+  if (activeTrackId && countedPlaybackStartId !== activeTrackId) {
+    recordTrackStart(activeTrackId);
+    countedPlaybackStartId = activeTrackId;
+    if (['recently-played', 'most-played', 'luma-replay', 'smart-mix', 'smart-playlist'].includes(currentView)) renderPage();
+  }
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   updateCurrentTrackHighlight();
   syncNowPlayingView();
   syncImmersivePlaybackState();
 });
 audio.addEventListener('pause', () => {
+  accumulateListeningTime(true);
+  lastStatsWallClock = 0;
+  saveAppState();
   setPlayControl($('#play-button'), true);
   $('#play-button').title = 'Putar';
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
@@ -1472,9 +2033,18 @@ audio.addEventListener('pause', () => {
   syncImmersivePlaybackState();
 });
 audio.addEventListener('ended', () => {
+  if (sleepTimerEndOfTrack) {
+    sleepTimerEndOfTrack = false;
+    audio.pause();
+    $('#sleep-timer-status').textContent = 'Timer selesai; pemutaran berhenti.';
+    toast('Timer tidur selesai.');
+    return;
+  }
   if (repeatMode === 2) {
     audio.currentTime = 0;
     audio.play().catch(() => {});
+  } else if (queuePosition >= playQueue.length - 1 && repeatMode !== 1 && appState.autoContinue) {
+    if (!maybeAutoContinueLocal()) nextTrack(false);
   } else {
     nextTrack(false);
   }
@@ -1505,6 +2075,10 @@ $('#forget-library').addEventListener('click', async () => {
     setPlayControl($('#play-button'), true);
     appState.lastTrack = null;
     appState.lastTime = 0;
+    appState.playHistory = [];
+    appState.playCounts = {};
+    appState.addedAt = {};
+    appState.listenSeconds = {};
     saveAppState();
     settingsDialog.close();
     renderPage();
@@ -1521,6 +2095,11 @@ $('#queue-list').addEventListener('click', event => {
   if (action.dataset.action === 'remove-queue-position') {
     event.stopPropagation();
     removeQueuePosition(position);
+    return;
+  }
+  if (action.dataset.action === 'move-queue-position') {
+    event.stopPropagation();
+    moveQueuePosition(position, Number(action.dataset.direction));
     return;
   }
   if (action.dataset.action === 'play-queue-position') {
@@ -1686,6 +2265,7 @@ scanUnsubscribe = window.lumaMusic.onScanProgress(progress => {
 async function init() {
   audio.volume = appState.volume;
   $('#volume-slider').value = String(appState.volume);
+  $('#autoplay-local').checked = appState.autoContinue;
   setShuffleControl($('#shuffle-button'), isShuffle);
   setRepeatControl($('#repeat-button'), repeatMode);
   applyMaterialMode(appState.material, false);
@@ -1711,6 +2291,7 @@ async function init() {
   } catch {
     library = { folder: null, tracks: [], scannedAt: null };
   }
+  ensureAddedAtForLibrary();
   renderPage();
   if (appState.lastTrack && library.tracks.some(track => track.id === appState.lastTrack)) {
     // Restore selection only; do not autoplay unexpectedly.

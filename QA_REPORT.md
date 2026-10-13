@@ -1,30 +1,26 @@
-# QA Report — Luma Music 1.1.1
+# QA Report — Luma Music 2.0.0
 
-## Checks completed
+## Static checks performed in this build workspace
 
-## Playback control icon polish
+- `npm test`: passed, including Node syntax checks for main, preload and renderer; structural assertions for HTML selectors/features; and Smart Playlist matcher tests for ALL/ANY, favorite/play-count, duration/bitrate, added date and empty rules.
+- CSS parsing using `tinycss2`: passed with 426 top-level rules and zero parser errors.
+- Smart Playlist UI and handlers: source-level checks present for editor, criteria matcher, saved rules and sidebar navigation; matcher tests exercise representative rule combinations.
+- Playlist M3U import/export: native dialogs run in Electron main process; renderer receives matched local track IDs rather than arbitrary file paths.
+- User-provided original PNG logo is preserved byte-identically across `assets/branding/luma-music-logo.png`, `assets/branding/luma-music-mark.png`, and Linux PNG app icons (SHA-256 `61daba553af7704e92cf7230b61442e5bad21b5a56084c2fd000ba9bc5b49bb1`); Windows ICO is a multi-size conversion for packaging.
+- Queue move controls now remain disabled for the active queue item; moving upcoming tracks cannot cross the active position.
+- No app network calls were added for Local Mix or listening statistics.
 
-- Replaced legacy text glyphs for play/pause, previous/next, shuffle, repeat and favorite with consistent inline SVGs.
-- Applied the same icon language to the mini-player, standard Now Playing page, immersive player, and utility controls.
-- Improved transport control spacing, hover/active states, accessibility labels, and responsive hit areas.
-- Replaced remaining LYR/EQ/queue and volume glyph controls with matching inline SVG icons.
-- Runtime audio behavior still requires a manual test in Electron on the target Linux Mint installation.
+## Runtime verification still required
 
-- `npm test` passes: JavaScript syntax checks for main/preload/renderer plus structure assertions (78 unique HTML IDs, 83 static renderer selectors).
-- HTML check passes: 78 unique IDs, no duplicate IDs, and no unresolved static renderer selectors.
-- CSS parser check (`tinycss2`) passes: 362 top-level rules and zero parser errors.
-- Added structure checks confirm the immersive overlay, essential controls, open/close functions, Escape behavior, and stylesheet are present.
+Electron runtime and audio playback were not run end-to-end in this build environment. On Linux Mint, run `npm install`, `npm test`, and `npm start`, then validate:
 
-## Immersive Now Playing changes
+1. Play/pause, seek, next/previous, shuffle, repeat and fullscreen return.
+2. Smart Playlist creation, edit, delete, persistence after restart, and ALL/ANY rule matching.
+3. Queue movement controls, removal, and active-track invariance.
+4. M3U export/import round trip with the same library folder selected.
+5. Sleep timer expiry and stop-at-end-of-track behavior.
+6. Statistics increment only during audio playback and persist locally.
+7. Local autoplay chooses library tracks only.
+8. `.deb`/AppImage on Linux Mint and NSIS installer on Windows x64.
 
-- Added a full-window in-app listening view with a cover-derived, blurred backdrop, opened directly from the dedicated sidebar navigation.
-- Added centered artwork, track information, synchronized playback controls, favorite, shuffle/repeat, seek, volume, local lyrics, equalizer and queue access.
-- Added visible return control, `Escape` exit, `F` toggle from the regular Now Playing page, and keyboard focus wrapping while the overlay is active.
-- Added responsive rules for short and narrow windows, plus reduced-motion handling.
-
-## Not yet verified
-
-- Electron runtime and real playback have not been executed in this environment for version 1.1.1.
-- Rendering the new overlay in a local headless Chromium screenshot attempt stalled in this environment; therefore this report does not claim a visual runtime pass for the new screen.
-- Audio codecs, seek behavior, volume control, dialogs over the overlay, and use with the XFCE dock/panel should be verified on the user's Linux Mint machine.
-- `.deb` and AppImage packages have not been built for this release. Run `npm install`, `npm test`, and `npm start` locally before creating packages with `npm run dist`.
+Do not describe runtime playback or packaged installers as production-tested until the above checks pass on target systems.

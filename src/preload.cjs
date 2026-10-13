@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('lumaMusic', Object.freeze({
   clearLibrary: () => ipcRenderer.invoke('library:clear'),
   migrateTrackIds: (ids) => ipcRenderer.invoke('library:migrate-track-ids', ids),
   loadAdjacentLyrics: (trackId) => ipcRenderer.invoke('lyrics:load-adjacent', trackId),
+  importPlaylistM3U: () => ipcRenderer.invoke('playlist:import-m3u'),
+  exportPlaylistM3U: (playlist) => ipcRenderer.invoke('playlist:export-m3u', playlist),
+  setFullscreen: (enabled) => ipcRenderer.invoke('window:set-fullscreen', Boolean(enabled)),
   setPlaybackMenuState: (state) => ipcRenderer.send('menu:playback-state', state),
   onMenuCommand: (callback) => {
     if (typeof callback !== 'function') return () => {};

@@ -2,99 +2,125 @@
   <img src="assets/branding/luma-music-logo.png" width="112" alt="Luma Music logo">
 </p>
 
-# Luma Music
+<h1 align="center">Luma Music</h1>
 
-**Luma Music** adalah pemutar musik desktop open-source yang mengutamakan koleksi lokal, alur pemutaran yang jelas, dan antarmuka gelap yang tenang. Desainnya menggabungkan navigasi koleksi ala Spotify dengan halaman artwork-first yang terinspirasi aplikasi Music di macOS—tanpa menyalin merek, aset, atau layanan streaming mereka.
+<p align="center">Musik lokal. Mendengarkan dengan lebih dekat.</p>
 
-- **Versi:** 1.1.1
-- **Branding:** ikon equalizer mint asli dipakai bersama oleh header aplikasi, README, dan ikon paket.
+**Luma Music 2.0.0** adalah pemutar musik desktop open-source untuk koleksi audio milikmu sendiri. Arah pengalaman belajarnya mengambil inspirasi dari navigasi koleksi Spotify dan tampilan artwork-first Apple Music, tetapi tetap memakai identitas Luma: logo equalizer mint asli, antarmuka glass yang tenang, dan pendekatan local-first tanpa akun, iklan, telemetri, atau katalog streaming palsu.
+
 - **Lisensi:** MIT
-- **Platform utama:** Linux desktop (diuji manual oleh pengguna tetap diperlukan)
 - **Teknologi:** JavaScript, HTML/CSS, Electron
-- **Runtime pengembangan:** Node.js 22+
+- **Node.js untuk pengembangan:** 22 atau lebih baru
+- **Platform target:** Linux desktop; konfigurasi paket Windows NSIS juga tersedia untuk diuji
+- **Privasi:** riwayat, statistik, smart playlist, dan mix disimpan lokal
 
-### Immersive Now Playing
+## Yang baru di 2.0
 
-Click **Sedang Diputar** in the sidebar to enter the immersive view directly, or open the regular details page from the mini-player and choose **Tampilan penuh**. Press `F` while that page is active to toggle the view. The full-window listening view uses the current album artwork as a soft blurred backdrop and provides play/pause, previous/next, shuffle, repeat, seek, volume, favorite, lyrics, equalizer, and queue controls. Press `Escape` or choose **Kembali** to return to the library view. The view also requests native Electron window fullscreen so the desktop window chrome/panels can be hidden where the desktop environment supports it; returning restores the previous windowed state.
+### Pengalaman mendengarkan
 
+- Mode **Sedang Diputar** immersive/fullscreen dengan sampul album besar dan latar artwork buram.
+- Kontrol playback SVG yang konsisten, seek, shuffle, tiga mode repeat, favorit, volume, lirik, equalizer, dan antrean.
+- Antrean dapat diubah urutannya dengan kontrol naik/turun untuk lagu berikutnya; lagu aktif tidak dipindahkan oleh kontrol tersebut.
+- Timer tidur berdasarkan durasi atau akhir lagu.
+- **Local Autoplay** opsional untuk melanjutkan lagu serupa hanya dari perpustakaan lokal.
 
-## Fitur
+### Perpustakaan dan personalisasi
 
-- Perpustakaan lokal yang memindai folder dan subfolder untuk format audio umum.
-- Metadata: judul, artis, album, genre, tahun, nomor trek, durasi, bitrate, sample rate, bit depth, dan artwork tertanam bila tersedia.
-- Album dan artis dengan halaman detail, semua lagu, favorit, playlist pribadi, antrean, shuffle, dan tiga mode repeat. Kontrol playback memakai ikon SVG inline yang konsisten, tanpa dependensi jaringan; kontrol utama, shuffle, repeat, favorit, volume, lirik, equalizer, dan antrean mengikuti sistem ikon yang sama.
-- Halaman **Sedang Diputar** dengan artwork besar, progres lagu, detail teknis, lirik berikutnya, antrean, serta mode imersif layar penuh dengan latar artwork buram dan kontrol playback lengkap.
-- Menu desktop Berkas, Pemutaran, Navigasi, Perpustakaan, Tampilan, dan Bantuan.
-- Lirik lokal `.lrc` / `.txt` di samping berkas audio; lirik tidak diunduh otomatis.
-- Equalizer 10-band Web Audio dengan preset, preamp, dan kurva respons.
-- Pintasan keyboard, posisi terakhir, favorit, playlist, volume, dan preferensi tema yang disimpan lokal.
-- Tema Glass dan Solid; Solid dapat dipilih pada perangkat yang kurang nyaman dengan blur.
-- Antarmuka renderer tidak memperoleh akses filesystem Node.js secara langsung. File audio disediakan lewat protokol internal yang dibatasi ke lagu pada perpustakaan.
-- Tidak ada akun, iklan, telemetri, atau koneksi jaringan yang diperlukan untuk pemutaran lokal.
+- Pemindaian folder dan subfolder, cache metadata/artwork, halaman album/artis, pencarian, favorit, dan playlist manual.
+- Pengurutan lagu berdasarkan judul, artis, album, tahun, waktu ditambahkan, jumlah pemutaran, dan durasi.
+- **Playlist Pintar**: buat playlist dinamis dengan aturan artis, album, genre, favorit, tahun, jumlah pemutaran, waktu terakhir diputar, waktu ditambahkan, durasi, atau bitrate. Aturan bisa dicocokkan sebagai semua (ALL) atau salah satu (ANY).
+- Koleksi pintar siap pakai: Mix untukmu, Baru ditambahkan, Baru diputar, Paling sering diputar, dan Luma Replay.
+- Riwayat lokal, jumlah sesi pemutaran, serta perkiraan waktu mendengarkan.
+- Impor dan ekspor playlist M3U/M3U8.
 
-## Menjalankan di Linux Mint / Ubuntu
+### Fitur audio
 
-1. Pasang Node.js 22 atau lebih baru. NVM dapat dipakai untuk mengelola beberapa versi Node.js.
-2. Ekstrak arsip, lalu buka terminal pada folder proyek.
-3. Pasang dependensi dan jalankan pemeriksaan:
+- Metadata umum termasuk judul, artis, album, genre, tahun, durasi, bitrate, sample rate, bit depth, dan artwork tertanam jika tersedia.
+- Lirik lokal `.lrc` / `.txt` di samping file audio; tidak ada pengunduhan lirik otomatis.
+- Equalizer 10-band dengan preset dan preamp melalui Web Audio.
+- Tema Glass dan Solid untuk perangkat yang kurang nyaman dengan blur.
+
+## Memulai di Linux Mint / Ubuntu
+
+1. Pasang Node.js 22 atau lebih baru. NVM bisa dipakai untuk menyimpan beberapa versi Node.js berdampingan.
+2. Ekstrak source code, buka terminal di folder `luma-music`, lalu jalankan:
 
 ```bash
 npm install
 npm test
-```
-
-4. Jalankan aplikasi:
-
-```bash
 npm start
 ```
 
-5. Pilih **Impor musik**, lalu pilih folder koleksi lokal. Pemindaian pertama mungkin memerlukan waktu jika koleksi sangat besar; pemindaian berikutnya dapat memakai cache untuk file yang tidak berubah.
+3. Di aplikasi, pilih **Impor musik** dan arahkan ke folder koleksi lokal.
+4. Buat playlist pintar lewat tombol `+` di bagian **Playlist Pintar** pada sidebar. Tambahkan aturan seperti `Artis memuat Yuju`, `Favorit adalah Favorit`, atau `Jumlah pemutaran minimal 3`.
 
 ## Build Linux
 
-Setelah `npm install` berhasil:
+Setelah dependensi terpasang:
 
 ```bash
 npm run dist
 ```
 
-File `.deb` dan AppImage akan dibuat di folder `release/`. Untuk membangun satu format saja:
+File `.deb` dan AppImage akan dibuat di `release/`. Pilihan per format:
 
 ```bash
 npm run dist:deb
 npm run dist:appimage
 ```
 
-Build perlu dilakukan di lingkungan Linux yang mempunyai dependensi Electron/electron-builder yang sesuai. Paket hasil build harus diuji di mesin target sebelum dibagikan.
+## Build Windows
+
+Konfigurasi installer NSIS tersedia untuk Windows x64. Bangun pada mesin Windows atau CI Windows setelah memasang dependensi:
+
+```powershell
+npm install
+npm test
+npm run dist:win
+```
+
+Hasil build akan ada di `release/`. Konfigurasi target bukan bukti bahwa installer sudah diuji; jalankan dan tes hasilnya pada Windows sungguhan sebelum membagikannya.
 
 ## Pintasan utama
 
 | Pintasan | Fungsi |
 |---|---|
 | `Ctrl+O` | Impor folder musik |
-| `Ctrl+K` | Fokus ke pencarian |
-| `Ctrl+1` sampai `Ctrl+6` | Beranda, lagu, album, artis, favorit, Sedang Diputar |
-| `F` | Buka/tutup tampilan penuh saat di Sedang Diputar |
-| `Esc` | Keluar dari tampilan penuh |
-| `Spasi` | Putar/jeda saat fokus bukan pada kontrol input |
+| `Ctrl+K` | Fokus pencarian |
+| `Ctrl+1`–`Ctrl+6` | Navigasi utama |
+| `F` | Buka/tutup fullscreen ketika halaman Sedang Diputar aktif |
+| `Esc` | Keluar dari fullscreen |
+| `Spasi` | Putar/jeda ketika fokus bukan pada input/kontrol |
 | `Alt+←` / `Alt+→` | Lagu sebelumnya/berikutnya |
-| `←` / `→` | Mundur/maju 5 detik saat tidak mengetik |
+| `←` / `→` | Mundur/maju 5 detik ketika tidak mengetik |
 | `M` | Senyap/pulihkan volume |
 | `L` | Lirik lokal |
 | `E` | Equalizer |
 | `Q` | Antrean lagu |
+| `Ctrl+Shift+O` | Impor M3U |
 
-Menu aplikasi desktop juga menyediakan kontrol pemutaran, pengulangan, navigasi, dan pengaturan tampilan.
+Menu native juga menyediakan navigasi, pemutaran, timer tidur, pengaturan, dan pembuatan playlist pintar.
+
+## Privasi dan data playlist
+
+Luma tidak mengunggah riwayat atau statistik mendengarkan ke server. Statistik tersimpan di penyimpanan lokal aplikasi. **Ekspor M3U menggunakan path file lokal** agar playlist mudah dipakai di mesin yang sama; periksa berkas hasil ekspor sebelum membagikannya, karena path dapat mengungkap struktur folder di komputermu.
 
 ## Batasan yang diketahui
 
-- **Rilis sumber ini belum menyertakan bukti build `.deb`/AppImage atau pengujian audio runtime di semua distro.** Jalankan `npm test`, kemudian uji playback MP3/FLAC, seek, repeat, dan equalizer di Linux Mint sebelum menganggap build siap dibagikan.
-- Format yang bisa diputar tergantung dukungan Chromium/Electron dan library sistem; daftar ekstensi yang terindeks bukan jaminan semua codec dapat didekode di semua mesin.
-- Equalizer menggunakan Web Audio; ini bukan jalur bit-perfect dan tidak menyediakan pemilihan perangkat audio eksklusif.
-- ReplayGain/EBU R128, gapless playback yang terjamin, pemutaran CUE sebagai trek virtual, pengeditan tag, smart playlist, dan integrasi MPRIS2/D-Bus native belum diklaim tersedia.
-- Aplikasi ini saat ini adalah pemutar koleksi lokal, bukan klien layanan streaming.
+- Luma adalah pemutar koleksi lokal, bukan klien katalog streaming. Spotify DJ, radio berlisensi, sinkronisasi cloud, rekomendasi online, dan playlist kolaboratif tidak disimulasikan.
+- Local Mix dan Local Autoplay adalah heuristik sederhana di perangkat, bukan model rekomendasi cloud.
+- Statistik waktu mendengarkan adalah perkiraan dari aktivitas playback; bukan laporan durasi dengar tersertifikasi.
+- Equalizer memakai Web Audio, sehingga bukan jalur bit-perfect dan tidak memberi akses audio eksklusif.
+- Gapless playback yang terjamin, crossfade antarfile yang sebenarnya, ReplayGain/EBU R128, pengeditan tag, dukungan CUE sebagai trek virtual, dan integrasi MPRIS2/D-Bus belum dinyatakan tersedia.
+- Build runtime Electron dan audio perlu diuji secara manual untuk setiap target platform sebelum publikasi rilis.
 
-## Pengembangan dan laporan bug
+## Dokumentasi proyek
 
-Lihat [QA_REPORT.md](QA_REPORT.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), [CHANGELOG.md](CHANGELOG.md), dan [FEATURE_ROADMAP.md](FEATURE_ROADMAP.md). Saat melaporkan masalah, sertakan versi Node.js, distro, format file, dan keluaran Terminal. Jangan menyertakan file audio pribadi.
+- [Riset fitur Spotify / Apple Music](docs/FEATURE_RESEARCH.md)
+- [Roadmap](FEATURE_ROADMAP.md)
+- [Laporan QA](QA_REPORT.md)
+- [Changelog](CHANGELOG.md)
+- [Panduan kontribusi](CONTRIBUTING.md)
+- [Kebijakan keamanan](SECURITY.md)
+
+Laporan bug sebaiknya menyertakan sistem operasi, versi Node.js/Electron, jenis file audio, serta pesan error. Jangan mengirimkan file musik pribadi atau informasi path sensitif.

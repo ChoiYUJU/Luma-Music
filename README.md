@@ -1,8 +1,13 @@
+<p align="center">
+  <img src="assets/branding/luma-music-logo.png" width="112" alt="Luma Music logo">
+</p>
+
 # Luma Music
 
 **Luma Music** adalah pemutar musik desktop open-source yang mengutamakan koleksi lokal, alur pemutaran yang jelas, dan antarmuka gelap yang tenang. Desainnya menggabungkan navigasi koleksi ala Spotify dengan halaman artwork-first yang terinspirasi aplikasi Music di macOS—tanpa menyalin merek, aset, atau layanan streaming mereka.
 
 - **Versi:** 1.1.1
+- **Branding:** ikon equalizer mint asli dipakai bersama oleh header aplikasi, README, dan ikon paket.
 - **Lisensi:** MIT
 - **Platform utama:** Linux desktop (diuji manual oleh pengguna tetap diperlukan)
 - **Teknologi:** JavaScript, HTML/CSS, Electron

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1 — Original app logo for GitHub and packages
+
+- Added the original Luma equalizer mark as reusable PNG branding assets.
+- Displayed the same mark at the top of the GitHub README.
+- Synchronized Linux package icons with the in-app mint tile and dark four-bar equalizer.
+- Included `assets/**/*` in packaged application files for in-app branding use.
+- Used the exact supplied 512×512 mint equalizer mark for the app header, README branding, Linux package icons, and derived 256×256 variants.
+
+
 ## 1.1.1 — 2026-10-13
 
 ### Changed

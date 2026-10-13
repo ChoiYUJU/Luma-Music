@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.1.1 — 2026-10-13
+
+### Changed
+- Replaced text-glyph playback controls with a consistent set of inline SVG icons for play/pause, previous/next, shuffle, repeat, favorite, volume, lyrics, equalizer, and queue.
+- Refined spacing, hover/active states, control hit areas, and small-window sizes for the mini-player and immersive player.
+- Added accessible pressed states and labels for shuffle and repeat.
+- Kept playback handlers and state transitions unchanged; only the control presentation and synchronized icon states were adjusted.
+
+### Checks
+- Added structure assertions to guard the presence of inline SVG icons on all transport controls.
+
+## 1.1.0 — 2026-10-13
+
+### Added
+- Immersive full-window Now Playing mode, opened directly from the sidebar navigation or with `F` while on the regular Now Playing page.
+- Album-art-derived blurred backdrop and larger centered cover artwork.
+- Fullscreen playback controls for play/pause, previous/next, shuffle, repeat, seek, volume and favorites.
+- Direct access to local lyrics, equalizer and queue while in immersive mode.
+- `Escape` and a visible return control to leave immersive mode.
+- Responsive layout for shorter and narrower windows.
+
+### Changed
+- Added a trusted preload IPC bridge to toggle the native Electron window fullscreen state.
+- Added structure checks for fullscreen Now Playing controls, open/close behavior, and the fullscreen IPC bridge.
+- Version bumped to 1.1.0.
+
+
 ## 1.0.0 — Full visual redesign
 
 - Mengganti sistem CSS bertumpuk dengan satu sistem desain konsisten: charcoal netral, aksen hijau lembut, artwork sebagai fokus, glass blur secukupnya, dan hierarki tipografi yang lebih terbaca.

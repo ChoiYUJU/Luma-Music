@@ -40,12 +40,36 @@ assert.match(preload, /loadAdjacentLyrics/, 'Local lyrics API is missing.');
 assert.match(main, /label: 'Pemutaran'/, 'Native playback menu is missing.');
 assert.match(main, /view:now-playing/, 'Desktop navigation command for Now Playing is missing.');
 assert.match(preload, /onMenuCommand/, 'Native menu command bridge is missing.');
+assert.match(preload, /setFullscreen:\s*\(enabled\)\s*=>\s*ipcRenderer\.invoke\('window:set-fullscreen'/, 'Fullscreen IPC is missing from preload.');
+assert.match(main, /ipcMain\.handle\('window:set-fullscreen'/, 'Fullscreen IPC handler is missing from main process.');
+assert.match(main, /assertTrustedSender\(event\)[\s\S]*?mainWindow\.setFullScreen\(enabled\)/, 'Fullscreen handler should validate the sender before changing the window.');
+
 assert.match(html, /id="track-context-menu"/, 'Track context menu is missing.');
 assert.match(html, /data-view="now-playing"/, 'Sidebar Now Playing navigation is missing.');
 assert.match(renderer, /function renderNowPlaying\(/, 'Now Playing page is missing.');
 assert.match(renderer, /function addTrackToQueue/, 'Queue append/priority actions are missing.');
 assert.match(renderer, /function applyMaterialMode/, 'Glass/solid material setting is missing.');
-assert.equal(pkg.version, '1.0.0', 'Unexpected package version.');
+assert.equal(pkg.version, '1.1.1', 'Unexpected package version.');
 assert.ok(Number.parseInt(pkg.engines.node.replace(/[^0-9]/g, ''), 10) >= 22, 'Node.js 22+ is required for the build environment.');
+
+assert.match(html, /id="immersive-player"/, 'Immersive Now Playing overlay is missing.');
+for (const id of ['immersive-close', 'immersive-cover-image', 'immersive-backdrop-image', 'immersive-play', 'immersive-seek-slider', 'immersive-volume-slider']) {
+  assert.ok(idSet.has(id), `Missing immersive player control: ${id}.`);
+}
+assert.match(renderer, /function openImmersivePlayer\(/, 'Immersive player open function is missing.');
+assert.match(renderer, /function closeImmersivePlayer\(/, 'Immersive player close function is missing.');
+assert.match(renderer, /event\.key === 'Escape'.*immersivePlayer/s, 'Escape shortcut should close immersive player.');
+assert.match(css, /\.immersive-player\s*\{/, 'Immersive player visual layer is missing.');
+assert.match(css, /\.control-icon\s*\{/, 'Unified playback SVG icon styling is missing.');
+for (const id of ['shuffle-button', 'previous-button', 'play-button', 'next-button', 'repeat-button', 'immersive-shuffle', 'immersive-previous', 'immersive-play', 'immersive-next', 'immersive-repeat']) {
+  const idPosition = html.indexOf(`id="${id}"`);
+  const buttonStart = html.lastIndexOf('<button', idPosition);
+  const buttonEnd = html.indexOf('</button>', idPosition);
+  const buttonMarkup = buttonStart >= 0 && buttonEnd >= 0 ? html.slice(buttonStart, buttonEnd) : '';
+  assert.ok(buttonMarkup.includes('<svg') && buttonMarkup.includes('class="control-icon"'), `Playback control ${id} should use a local SVG icon.`);
+}
+assert.match(renderer, /function setPlayControl\(/, 'Shared play/pause icon state helper is missing.');
+assert.match(renderer, /function setShuffleControl\(/, 'Shuffle state helper is missing.');
+assert.match(renderer, /function setRepeatControl\(/, 'Repeat state helper is missing.');
 
 console.log(`Structure check passed: ${ids.length} unique HTML IDs, ${new Set(directSelectors).size} static selectors, Luma Music ${pkg.version}.`);

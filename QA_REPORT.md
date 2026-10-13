@@ -1,16 +1,30 @@
-# QA Report — Luma Music 1.0.0
+# QA Report — Luma Music 1.1.1
 
-## Pemeriksaan yang berhasil
+## Checks completed
 
-- `npm test`: lolos. Memeriksa sintaks `src/main.mjs`, `src/preload.cjs`, `src/renderer.js`, keunikan ID HTML, selector statis, keberadaan menu/halaman Sedang Diputar, protokol audio, jalur preload, dan kelas tema.
-- Pemeriksaan CSS dengan parser `tinycss2`: 299 aturan tingkat atas, tanpa error parsing.
-- Pemeriksaan visual renderer Chromium pada viewport 1366×768 dengan API Electron tiruan dan koleksi musik sintetis: Beranda, halaman detail album, halaman Sedang Diputar kosong, dan halaman Sedang Diputar aktif berhasil dirender tanpa error JavaScript pada simulasi.
-- Struktur album: lima kartu tampil sejajar di beranda pada viewport pengujian; daftar lagu beranda memakai urutan yang tampil, bukan antrean seluruh perpustakaan secara tidak sengaja.
+## Playback control icon polish
 
-## Belum diverifikasi
+- Replaced legacy text glyphs for play/pause, previous/next, shuffle, repeat and favorite with consistent inline SVGs.
+- Applied the same icon language to the mini-player, standard Now Playing page, immersive player, and utility controls.
+- Improved transport control spacing, hover/active states, accessibility labels, and responsive hit areas.
+- Replaced remaining LYR/EQ/queue and volume glyph controls with matching inline SVG icons.
+- Runtime audio behavior still requires a manual test in Electron on the target Linux Mint installation.
 
-- `npm install` tidak selesai di lingkungan pembuatan ini; proses terhenti saat menunggu registry npm, dan tidak ada paket runtime yang berhasil dipasang.
-- Aplikasi Electron nyata belum dijalankan dari paket ini. Pemutaran file lokal melalui protokol `luma-audio://`, codec yang tersedia di distro, Media Session, perangkat audio, dan integrasi desktop harus diuji di Linux Mint.
-- Installer `.deb` dan AppImage belum dibuat. Setelah instalasi dependensi berhasil di Linux, jalankan `npm test`, `npm start`, kemudian `npm run dist`.
+- `npm test` passes: JavaScript syntax checks for main/preload/renderer plus structure assertions (78 unique HTML IDs, 83 static renderer selectors).
+- HTML check passes: 78 unique IDs, no duplicate IDs, and no unresolved static renderer selectors.
+- CSS parser check (`tinycss2`) passes: 362 top-level rules and zero parser errors.
+- Added structure checks confirm the immersive overlay, essential controls, open/close functions, Escape behavior, and stylesheet are present.
 
-Simulasi Chromium hanya membuktikan alur render antarmuka dengan API tiruan. Itu bukan bukti bahwa pemutaran audio Electron telah lolos pengujian runtime.
+## Immersive Now Playing changes
+
+- Added a full-window in-app listening view with a cover-derived, blurred backdrop, opened directly from the dedicated sidebar navigation.
+- Added centered artwork, track information, synchronized playback controls, favorite, shuffle/repeat, seek, volume, local lyrics, equalizer and queue access.
+- Added visible return control, `Escape` exit, `F` toggle from the regular Now Playing page, and keyboard focus wrapping while the overlay is active.
+- Added responsive rules for short and narrow windows, plus reduced-motion handling.
+
+## Not yet verified
+
+- Electron runtime and real playback have not been executed in this environment for version 1.1.1.
+- Rendering the new overlay in a local headless Chromium screenshot attempt stalled in this environment; therefore this report does not claim a visual runtime pass for the new screen.
+- Audio codecs, seek behavior, volume control, dialogs over the overlay, and use with the XFCE dock/panel should be verified on the user's Linux Mint machine.
+- `.deb` and AppImage packages have not been built for this release. Run `npm install`, `npm test`, and `npm start` locally before creating packages with `npm run dist`.

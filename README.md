@@ -2,18 +2,23 @@
 
 **Luma Music** adalah pemutar musik desktop open-source yang mengutamakan koleksi lokal, alur pemutaran yang jelas, dan antarmuka gelap yang tenang. Desainnya menggabungkan navigasi koleksi ala Spotify dengan halaman artwork-first yang terinspirasi aplikasi Music di macOS—tanpa menyalin merek, aset, atau layanan streaming mereka.
 
-- **Versi:** 1.0.0
+- **Versi:** 1.1.1
 - **Lisensi:** MIT
 - **Platform utama:** Linux desktop (diuji manual oleh pengguna tetap diperlukan)
 - **Teknologi:** JavaScript, HTML/CSS, Electron
 - **Runtime pengembangan:** Node.js 22+
 
+### Immersive Now Playing
+
+Click **Sedang Diputar** in the sidebar to enter the immersive view directly, or open the regular details page from the mini-player and choose **Tampilan penuh**. Press `F` while that page is active to toggle the view. The full-window listening view uses the current album artwork as a soft blurred backdrop and provides play/pause, previous/next, shuffle, repeat, seek, volume, favorite, lyrics, equalizer, and queue controls. Press `Escape` or choose **Kembali** to return to the library view. The view also requests native Electron window fullscreen so the desktop window chrome/panels can be hidden where the desktop environment supports it; returning restores the previous windowed state.
+
+
 ## Fitur
 
 - Perpustakaan lokal yang memindai folder dan subfolder untuk format audio umum.
 - Metadata: judul, artis, album, genre, tahun, nomor trek, durasi, bitrate, sample rate, bit depth, dan artwork tertanam bila tersedia.
-- Album dan artis dengan halaman detail, semua lagu, favorit, playlist pribadi, antrean, shuffle, dan tiga mode repeat.
-- Halaman **Sedang Diputar** dengan artwork besar, progres lagu, detail teknis, lirik berikutnya, dan akses ke antrean.
+- Album dan artis dengan halaman detail, semua lagu, favorit, playlist pribadi, antrean, shuffle, dan tiga mode repeat. Kontrol playback memakai ikon SVG inline yang konsisten, tanpa dependensi jaringan; kontrol utama, shuffle, repeat, favorit, volume, lirik, equalizer, dan antrean mengikuti sistem ikon yang sama.
+- Halaman **Sedang Diputar** dengan artwork besar, progres lagu, detail teknis, lirik berikutnya, antrean, serta mode imersif layar penuh dengan latar artwork buram dan kontrol playback lengkap.
 - Menu desktop Berkas, Pemutaran, Navigasi, Perpustakaan, Tampilan, dan Bantuan.
 - Lirik lokal `.lrc` / `.txt` di samping berkas audio; lirik tidak diunduh otomatis.
 - Equalizer 10-band Web Audio dengan preset, preamp, dan kurva respons.
@@ -65,6 +70,8 @@ Build perlu dilakukan di lingkungan Linux yang mempunyai dependensi Electron/ele
 | `Ctrl+O` | Impor folder musik |
 | `Ctrl+K` | Fokus ke pencarian |
 | `Ctrl+1` sampai `Ctrl+6` | Beranda, lagu, album, artis, favorit, Sedang Diputar |
+| `F` | Buka/tutup tampilan penuh saat di Sedang Diputar |
+| `Esc` | Keluar dari tampilan penuh |
 | `Spasi` | Putar/jeda saat fokus bukan pada kontrol input |
 | `Alt+←` / `Alt+→` | Lagu sebelumnya/berikutnya |
 | `←` / `→` | Mundur/maju 5 detik saat tidak mengetik |

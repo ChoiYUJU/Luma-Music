@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' luma-audio: blob:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#111312">
-  <title>Luma Music</title>
+  <title>Luma Music Max</title>
   <link rel="stylesheet" href="./styles.css">
   <script src="./renderer.js" defer></script>
 </head>
@@ -15,7 +15,7 @@
     <aside class="sidebar">
       <div class="brand-row">
         <img class="brand-mark" src="../assets/branding/luma-music-logo.png" alt="" aria-hidden="true">
-        <div class="brand-copy"><strong>luma</strong><small>MUSIC PLAYER</small></div>
+        <div class="brand-copy"><strong>luma</strong><small>MUSIC MAX</small></div>
       </div>
 
       <div class="side-section-label">PEMUTARAN</div>
@@ -78,7 +78,7 @@
 
   <footer class="player-bar">
     <div class="now-playing">
-      <button id="now-cover" type="button" class="mini-cover cover-placeholder" title="Buka Sedang Diputar" aria-label="Buka Sedang Diputar"><span>♫</span></button>
+      <button id="now-cover" type="button" class="mini-cover cover-placeholder" title="Buka Sedang Diputar" aria-label="Buka Sedang Diputar"><span class="cover-glyph-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
       <button id="player-now-playing" type="button" class="now-copy" title="Buka Sedang Diputar" aria-label="Buka Sedang Diputar"><strong id="now-title">Belum ada lagu diputar</strong><span id="now-artist">Impor folder musik untuk memulai</span></button>
       <button id="now-favorite" class="icon-button favorite-button" title="Tambah ke favorit" aria-label="Tambah ke favorit" disabled><svg class="control-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.7a5.5 5.5 0 0 0-7.8 0L12 5.8l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.9-8.5a5.5 5.5 0 0 0-.1-7.8Z"/></svg></button>
     </div>
@@ -105,7 +105,7 @@
     </div>
     <header class="immersive-header">
       <div class="immersive-brand">
-        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <img class="brand-mark immersive-brand-mark" src="../assets/branding/luma-music-logo.png" alt="" aria-hidden="true">
         <div><strong>luma</strong><small>NOW PLAYING</small></div>
       </div>
       <button id="immersive-close" class="immersive-close" type="button" aria-label="Kembali ke aplikasi" title="Kembali (Esc)"><span aria-hidden="true">×</span><span>Kembali</span></button>
@@ -113,7 +113,7 @@
     <main class="immersive-main">
       <div class="immersive-artwork-shell">
         <img id="immersive-cover-image" alt="Sampul album saat ini" hidden>
-        <div id="immersive-cover-fallback" class="immersive-cover-fallback" aria-hidden="true">♫</div>
+        <div id="immersive-cover-fallback" class="immersive-cover-fallback" aria-hidden="true"><span class="cover-glyph-bars"><i></i><i></i><i></i><i></i></span></div>
       </div>
       <div class="immersive-track-info">
         <span class="eyebrow">SEDANG DIPUTAR</span>
@@ -159,17 +159,19 @@
     <div class="context-divider"></div>
     <button type="button" role="menuitem" data-context-action="playlist">Tambahkan ke playlist…</button>
     <button type="button" role="menuitem" data-context-action="favorite">Tambah ke favorit</button>
+    <button type="button" role="menuitem" data-context-action="edit-metadata">Edit info & rating…</button>
   </div>
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
   <dialog id="settings-dialog" class="app-dialog">
     <div class="dialog-heading"><div><span class="eyebrow">LUMA MUSIC</span><h2>Pengaturan & sumber</h2></div><button id="close-settings" class="icon-button" aria-label="Tutup">×</button></div>
     <div class="settings-block"><h3>Perpustakaan lokal</h3><p id="settings-folder">Belum ada folder musik yang dipilih.</p><div class="settings-actions"><button id="settings-import" class="primary-button">Pilih folder musik</button><button id="forget-library" class="secondary-button">Lepas perpustakaan</button></div></div>
-    <div class="settings-block"><h3>Tampilan</h3><p>Material kaca buram memakai transparansi secukupnya. Pilih mode solid jika efek blur terasa berat di perangkatmu.</p><label class="setting-select-row" for="material-mode"><span>Material jendela</span><select id="material-mode"><option value="glass">Glass · kaca buram</option><option value="solid">Solid · tanpa blur</option></select></label></div>
+    <div class="settings-block"><h3>Tampilan</h3><p>Sesuaikan suasana Luma. Glass menjaga panel berlapis; Solid mengurangi blur jika perangkat membutuhkan performa lebih.</p><label class="setting-select-row" for="theme-mode"><span>Tema warna</span><select id="theme-mode"><option value="dark">Dark · malam</option><option value="light">Light · terang</option><option value="system">Ikuti sistem</option></select></label><label class="setting-select-row" for="material-mode"><span>Material jendela</span><select id="material-mode"><option value="glass">Glass · kaca buram</option><option value="solid">Solid · tanpa blur</option></select></label></div>
     <div class="settings-block"><h3>Pengalaman mendengarkan</h3><label class="setting-select-row" for="autoplay-local"><span>Lanjutkan dengan lagu serupa dari koleksi lokal</span><input id="autoplay-local" type="checkbox"></label><p class="settings-help">Saat antrean selesai, Luma dapat mencari lagu dengan artis atau genre yang berdekatan dari perpustakaanmu. Semua perhitungan dilakukan lokal.</p></div>
     <div class="settings-block sleep-timer-settings"><h3>Timer tidur</h3><p>Hentikan pemutaran setelah durasi tertentu atau ketika lagu aktif selesai.</p><div class="sleep-timer-row"><select id="sleep-timer-select" aria-label="Durasi timer tidur"><option value="off">Mati</option><option value="15">15 menit</option><option value="30">30 menit</option><option value="45">45 menit</option><option value="60">1 jam</option><option value="90">1 jam 30 menit</option><option value="end-track">Saat lagu selesai</option></select><button id="sleep-timer-start" class="secondary-button">Aktifkan</button></div><p id="sleep-timer-status" class="sleep-timer-status" aria-live="polite">Timer tidur mati.</p></div>
+    <div class="settings-block"><h3>Cadangan dan pemulihan</h3><p>Ekspor favorit, playlist, playlist pintar, rating, metadata khusus Luma, serta statistik lokal ke file JSON. File audio asli tidak disalin.</p><div class="settings-actions"><button id="export-app-backup" class="secondary-button">Ekspor cadangan…</button><button id="import-app-backup" class="secondary-button">Pulihkan cadangan…</button></div><p class="settings-help">Cadangan memakai ID lagu lokal; sesudah memindahkan koleksi ke folder atau komputer lain, beberapa referensi playlist mungkin perlu dibuat ulang.</p></div>
     <div class="settings-block"><h3>Privasi</h3><p>Luma memutar file lokal. Tidak ada akun, iklan, pelacak, atau koneksi streaming. Riwayat, statistik, dan mix pribadi tersimpan di perangkat ini.</p></div>
     <div class="settings-block"><h3>Pintasan keyboard</h3><p><strong>F</strong> layar penuh saat berada di Sedang Diputar · <strong>Esc</strong> keluar dari layar penuh · <strong>Spasi</strong> putar/jeda · <strong>Ctrl+K</strong> cari · <strong>Ctrl+6</strong> Sedang Diputar · <strong>Alt+← / Alt+→</strong> lagu sebelumnya/berikutnya · <strong>← / →</strong> lompat 5 detik · <strong>M</strong> senyap/pulihkan volume · <strong>L</strong> lirik · <strong>E</strong> equalizer · <strong>Q</strong> antrean · <strong>Ctrl+Shift+O</strong> impor playlist M3U.</p></div>
-    <div class="settings-block"><h3>Versi</h3><p>Luma Music 2.0.0 · Open-source · Lisensi MIT</p></div>
+    <div class="settings-block"><h3>Versi</h3><p>Luma Music Max 3.2.0 · Glass UI & Library Polish · Open-source · Lisensi MIT</p></div>
   </dialog>
 
   <dialog id="smart-playlist-dialog" class="app-dialog smart-playlist-dialog">
@@ -180,6 +182,25 @@
       <div id="smart-playlist-rules" class="smart-playlist-rules"></div>
       <div class="smart-playlist-footer"><button id="smart-playlist-add-rule" class="secondary-button" type="button">＋ Tambah aturan</button><span id="smart-playlist-preview-count" class="smart-playlist-preview-count">Belum ada aturan</span></div>
       <div class="dialog-actions"><button id="cancel-smart-playlist" class="secondary-button" type="button">Batal</button><button class="primary-button" type="submit">Simpan playlist</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="track-edit-dialog" class="app-dialog track-edit-dialog">
+    <form id="track-edit-form" method="dialog">
+      <div class="dialog-heading"><div><span class="eyebrow">DETAIL KOLEKSI</span><h2>Edit info lagu</h2><p class="dialog-subtitle">Perubahan berlaku di Luma; file audio asli tidak ditulis ulang.</p></div><button id="close-track-edit" class="icon-button" type="button" aria-label="Tutup">×</button></div>
+      <input id="track-edit-id" type="hidden">
+      <div class="track-edit-grid">
+        <label>Judul<input id="track-edit-title" class="text-field" maxlength="240" required></label>
+        <label>Artis<input id="track-edit-artist" class="text-field" maxlength="240" required></label>
+        <label>Album artist<input id="track-edit-album-artist" class="text-field" maxlength="240"></label>
+        <label>Album<input id="track-edit-album" class="text-field" maxlength="240"></label>
+        <label>Genre<input id="track-edit-genre" class="text-field" maxlength="120"></label>
+        <label>Tahun<input id="track-edit-year" class="text-field" type="number" min="1000" max="3000" step="1"></label>
+        <label>Nomor track<input id="track-edit-track-no" class="text-field" type="number" min="0" max="9999" step="1"></label>
+        <label>Rating pribadi<select id="track-edit-rating" class="text-field"><option value="0">Belum diberi rating</option><option value="1">★ 1 / 5</option><option value="2">★ 2 / 5</option><option value="3">★ 3 / 5</option><option value="4">★ 4 / 5</option><option value="5">★ 5 / 5</option></select></label>
+      </div>
+      <div id="track-edit-technical" class="track-technical-summary"></div>
+      <div class="dialog-actions"><button id="reset-track-edit" class="secondary-button" type="button">Reset info lokal</button><span class="dialog-spacer"></span><button id="cancel-track-edit" class="secondary-button" type="button">Batal</button><button class="primary-button" type="submit">Simpan</button></div>
     </form>
   </dialog>
 

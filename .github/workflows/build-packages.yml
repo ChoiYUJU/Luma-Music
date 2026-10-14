@@ -1,0 +1,110 @@
+name: Build user installers
+
+on:
+  # Building happens on release tags. The artifacts are attached to a draft release
+  # so a maintainer can test them before making downloads public.
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional: create a draft release for this tag (example: v3.3.1). Leave blank to build test artifacts only.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Linux x86_64 installers
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Linux packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm libfuse2
+      - name: Install npm dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test source
+        run: npm test
+      - name: Build user-facing Linux formats
+        run: npm run dist:linux:release
+      - name: Upload Linux installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: luma-linux-x64
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows:
+    name: Windows x64 installers
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install npm dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test source
+        run: npm test
+      - name: Build user-facing Windows formats
+        run: npm run dist:win:release
+      - name: Upload Windows installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: luma-windows-x64
+          path: |
+            release/*Setup*.exe
+            release/*Portable*.exe
+            release/*Windows*.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  draft-release:
+    name: Assemble draft release for maintainer review
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Verify assets exist and generate SHA-256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$(find release-assets -maxdepth 1 -type f -print -quit)"
+          cd release-assets
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS.txt' -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Create draft release for maintainer review
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Luma Music Max ${{ inputs.release_tag || github.ref_name }}
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          draft: true
+          prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-assets/*

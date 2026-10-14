@@ -74,7 +74,31 @@ assert.match(renderer, /function moveQueuePosition\(/, 'Queue reordering functio
 assert.match(renderer, /data-action=\"move-queue-position\"/, 'Queue move controls are missing.');
 assert.match(renderer, /position <= queuePosition \|\| target <= queuePosition/, 'Queue reorder must not move tracks across the active position.');
 assert.match(renderer, /function applyMaterialMode/, 'Glass/solid material setting is missing.');
-assert.equal(pkg.version, '2.0.0', 'Unexpected package version.');
+assert.equal(pkg.version, '3.3.1', 'Unexpected package version.');
+assert.match(html, /id="theme-mode"/, 'Light/dark/system theme selector is missing.');
+assert.match(renderer, /function applyThemeMode\(/, 'Theme mode behavior is missing.');
+assert.match(css, /body\[data-theme="light"\]/, 'Light theme variables are missing.');
+assert.match(html, /data-view="songs"/, 'All songs navigation is missing.');
+assert.match(renderer, /function trackCardGridMarkup\(/, 'Cover-forward track cards are missing.');
+assert.match(renderer, /function songsLayoutActions\(/, 'Grid/list view toggle is missing.');
+assert.match(renderer, /data-action="set-songs-layout"/, 'Song collection layout toggle actions are missing.');
+assert.match(renderer, /function syncRangeFill\(/, 'Range fill helper is missing.');
+assert.match(css, /linear-gradient\(90deg, var\(--accent-strong\)/, 'Colored range progress fill is missing.');
+assert.match(main, /const MAX_ART_BYTES = 3 \* 1024 \* 1024/, 'Embedded artwork size limit should support higher-resolution covers.');
+assert.match(main, /artworkVersion: 2/, 'The artwork cache format version must be written.');
+assert.match(main, /data\.artworkVersion < 2/, 'Older artwork caches should be refreshed once.');
+assert.match(main, /await scanFolder\(data\.folder, event\.sender\)/, 'Old cached libraries should be rescanned for cover art.');
+assert.match(main, /const folderStat = await fs\.stat\(data\.folder\)/, 'Artwork cache migration should not scan a missing library folder.');
+assert.match(main, /async function readSiblingArtwork\(/, 'Local cover image sidecar support is missing.');
+assert.match(renderer, /function handleCoverLoadFailure\(/, 'Broken cover image fallback is missing.');
+assert.match(renderer, /data-cover-image/, 'Rendered artwork images should have load-failure handling.');
+
+assert.equal(pkg.productName, 'Luma Music Max', 'Product branding should use Luma Music Max.');
+assert.equal(pkg.build?.productName, 'Luma Music Max', 'Linux and Windows packages should use Luma Music Max branding.');
+assert.equal(pkg.build?.nsis?.shortcutName, 'Luma Music Max', 'Windows shortcuts should use Luma Music Max branding.');
+assert.match(main, /label: 'Keluar dari Luma Music Max'/, 'Exit menu should use Luma Music Max branding.');
+assert.match(main, /label: 'Tentang Luma Music Max'/, 'About menu should use Luma Music Max branding.');
+assert.equal(pkg.build.appId, 'org.lumamusic.player', 'Keep app ID stable so existing local data is preserved.');
 assert.ok(Number.parseInt(pkg.engines.node.replace(/[^0-9]/g, ''), 10) >= 22, 'Node.js 22+ is required for the build environment.');
 
 assert.match(html, /id="immersive-player"/, 'Immersive Now Playing overlay is missing.');
@@ -96,5 +120,19 @@ for (const id of ['shuffle-button', 'previous-button', 'play-button', 'next-butt
 assert.match(renderer, /function setPlayControl\(/, 'Shared play/pause icon state helper is missing.');
 assert.match(renderer, /function setShuffleControl\(/, 'Shuffle state helper is missing.');
 assert.match(renderer, /function setRepeatControl\(/, 'Repeat state helper is missing.');
+assert.match(renderer, /function openTrackEditor\(/, 'Track metadata editor is missing.');
+assert.match(renderer, /function saveTrackEditor\(/, 'Track metadata save handler is missing.');
+assert.match(renderer, /function organizeCurrentPlaylist\(/, 'Playlist folder organization is missing.');
+assert.match(renderer, /case 'rating': return compareNumber\(trackRating\(track.id\)\)/, 'Smart playlist rating rule is missing.');
+assert.match(main, /appdata:export-backup/, 'Backup export IPC is missing.');
+assert.match(main, /appdata:import-backup/, 'Backup import IPC is missing.');
+assert.match(preload, /exportAppBackup/, 'Backup export bridge is missing.');
+assert.match(preload, /importAppBackup/, 'Backup import bridge is missing.');
+assert.match(html, /id="track-edit-dialog"/, 'Track editor dialog is missing.');
+assert.match(html, /id="export-app-backup"/, 'Backup export button is missing.');
+assert.match(css, /\.track-edit-grid\s*\{/, 'Track editor grid styling is missing.');
+const nextTrackFunction = renderer.match(/function nextTrack\(manual = false\) \{([\s\S]*?)\n\}/)?.[1] || '';
+assert.match(nextTrackFunction, /queuePosition \+= 1;/, 'Next-track increment is missing.');
+assert.equal((nextTrackFunction.match(/queuePosition \+= 1;/g) || []).length, 1, 'Next-track must advance exactly one queue position.');
 
 console.log(`Structure check passed: ${ids.length} unique HTML IDs, ${new Set(directSelectors).size} static selectors, Luma Music ${pkg.version}.`);

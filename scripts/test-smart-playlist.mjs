@@ -17,6 +17,7 @@ const testTracks = [
 ];
 const testState = {
   favorites: ['b', 'c'],
+  ratings: { a: 4, b: 5, c: 2 },
   playCounts: { a: 3, b: 6, c: 1 },
   addedAt: { a: Date.now() - 3 * 86400000, b: Date.now() - 3600000, c: Date.now() - 5 * 86400000 },
   playHistory: [
@@ -32,6 +33,7 @@ let library = { tracks: ${JSON.stringify(testTracks)} };
 let appState = ${JSON.stringify(testState)};
 function isFavorite(id) { return appState.favorites.includes(id); }
 function trackPlayCount(id) { return Number(appState.playCounts[id]) || 0; }
+function trackRating(id) { return Number(appState.ratings[id]) || 0; }
 ${source.slice(helpersStart, helpersEnd)}
 globalThis.matchTracks = playlist => smartPlaylistTracks(playlist).map(track => track.id);
 `;
@@ -72,6 +74,8 @@ assert.deepEqual(matches({ match: 'all', rules: [
   { field: 'last-played-days', operator: 'within-last', value: '3' }
 ] }), ['a', 'b'], 'Last-played age should use the latest local playback timestamp.');
 
+assert.deepEqual(matches({ match: 'all', rules: [ { field: 'rating', operator: 'at-least', value: '4' } ] }), ['a', 'b'], 'Rating rules should match locally rated tracks.');
+
 assert.deepEqual(matches({ match: 'all', rules: [] }), ['a', 'b', 'c'], 'An empty rule set should clearly resolve to the full local library.');
 
-console.log('Smart Playlist rule tests passed: ALL/ANY, favorite/play-count, duration/bitrate, year, not-contains, added date, last-played age, and empty rules.');
+console.log('Smart Playlist rule tests passed: ALL/ANY, favorite/play-count, duration/bitrate, year, not-contains, added date, last-played age, rating, and empty rules.');

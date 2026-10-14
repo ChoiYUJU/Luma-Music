@@ -1,7 +1,7 @@
 {
   "name": "luma-music",
-  "version": "2.0.0",
-  "description": "A local-first music player with smart listening, personal stats, playlists and an immersive glass interface",
+  "version": "3.3.1",
+  "description": "Luma Music Max: a local music player with a polished glass UI and user-friendly installers for Linux and Windows",
   "private": false,
   "type": "module",
   "main": "src/main.mjs",
@@ -13,11 +13,26 @@
     "start": "electron .",
     "dev": "electron .",
     "check": "node --check src/main.mjs && node --check src/preload.cjs && node --check src/renderer.js",
-    "dist": "electron-builder --linux AppImage deb",
-    "dist:appimage": "electron-builder --linux AppImage",
-    "dist:deb": "electron-builder --linux deb",
-    "test": "npm run check && node scripts/check-structure.mjs && node scripts/test-smart-playlist.mjs",
-    "dist:win": "electron-builder --win nsis"
+    "test": "npm run check && node scripts/check-structure.mjs && node scripts/test-smart-playlist.mjs && node scripts/test-app-state.mjs && node scripts/test-portability.mjs",
+    "dist": "npm run dist:linux:release",
+    "dist:linux": "npm run dist:linux:release",
+    "dist:linux:all": "electron-builder --linux AppImage deb rpm tar.gz --x64",
+    "dist:linux:common": "electron-builder --linux AppImage deb rpm flatpak tar.gz --x64",
+    "dist:appimage": "electron-builder --linux AppImage --x64",
+    "dist:deb": "electron-builder --linux deb --x64",
+    "dist:rpm": "electron-builder --linux rpm --x64",
+    "dist:pacman": "electron-builder --linux pacman --x64",
+    "dist:flatpak": "electron-builder --linux flatpak --x64",
+    "dist:snap": "electron-builder --linux snap --x64",
+    "dist:linux:tarball": "electron-builder --linux tar.gz --x64",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:win:all": "electron-builder --win nsis portable zip --x64",
+    "dist:win:installer": "electron-builder --win nsis --x64",
+    "dist:win:portable": "electron-builder --win portable --x64",
+    "dist:win:zip": "electron-builder --win zip --x64",
+    "dist:linux:release": "electron-builder --linux AppImage deb rpm tar.gz --x64",
+    "dist:linux:experimental": "electron-builder --linux pacman flatpak --x64",
+    "dist:win:release": "electron-builder --win nsis portable zip --x64"
   },
   "dependencies": {
     "music-metadata": "^12.2.0"
@@ -28,7 +43,7 @@
   },
   "build": {
     "appId": "org.lumamusic.player",
-    "productName": "Luma Music",
+    "productName": "Luma Music Max",
     "asar": true,
     "directories": {
       "output": "release"
@@ -44,11 +59,26 @@
       "category": "AudioVideo",
       "target": [
         "AppImage",
-        "deb"
+        "deb",
+        "rpm",
+        "tar.gz"
       ],
       "synopsis": "A polished open-source local music player",
-      "description": "A free, open-source local music player with library browsing, playlists, local lyrics and an equalizer.",
-      "icon": "build/icons"
+      "description": "A free, open-source local music player with library browsing, smart playlists, local lyrics and a glass interface.",
+      "icon": "build/icons",
+      "maintainer": "Luma Music contributors",
+      "vendor": "Luma Music open-source project",
+      "desktop": {
+        "entry": {
+          "Name": "Luma Music Max",
+          "Comment": "Local music. Immersive listening.",
+          "Categories": "AudioVideo;Audio;Player;",
+          "StartupWMClass": "Luma Music Max",
+          "Terminal": "false",
+          "Type": "Application"
+        }
+      },
+      "artifactName": "Luma-Music-Max-${version}-${arch}.${ext}"
     },
     "deb": {
       "depends": [
@@ -61,12 +91,25 @@
         "libatspi2.0-0",
         "libuuid1",
         "libsecret-1-0"
-      ]
+      ],
+      "artifactName": "Luma-Music-Max-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
         {
           "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64"
           ]
@@ -79,7 +122,60 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Luma Music"
+      "shortcutName": "Luma Music Max",
+      "artifactName": "Luma-Music-Max-Setup-${version}-${arch}.${ext}"
+    },
+    "flatpak": {
+      "runtime": "org.freedesktop.Platform",
+      "sdk": "org.freedesktop.Sdk",
+      "runtimeVersion": "25.08",
+      "baseVersion": "20.08",
+      "branch": "stable",
+      "useWaylandFlags": true,
+      "finishArgs": [
+        "--socket=x11",
+        "--socket=wayland",
+        "--share=ipc",
+        "--device=dri",
+        "--socket=pulseaudio",
+        "--filesystem=home",
+        "--talk-name=org.freedesktop.Notifications"
+      ]
+    },
+    "rpm": {
+      "depends": [
+        "gtk3",
+        "libnotify",
+        "nss",
+        "libXScrnSaver",
+        "libXtst",
+        "xdg-utils",
+        "at-spi2-core",
+        "libsecret"
+      ],
+      "artifactName": "Luma-Music-Max-${version}-${arch}.${ext}"
+    },
+    "pacman": {
+      "depends": [
+        "gtk3",
+        "libnotify",
+        "nss",
+        "libxss",
+        "libxtst",
+        "xdg-utils",
+        "at-spi2-core",
+        "libsecret"
+      ]
+    },
+    "portable": {
+      "artifactName": "Luma-Music-Max-Portable-${version}-${arch}.${ext}"
+    },
+    "zip": {
+      "artifactName": "Luma-Music-Max-Windows-${version}-${arch}.${ext}"
+    },
+    "appImage": {
+      "artifactName": "Luma-Music-Max-${version}-${arch}.${ext}"
     }
-  }
+  },
+  "productName": "Luma Music Max"
 }

@@ -3,3 +3,10 @@ release/
 dist/
 *.log
 .DS_Store
+*.AppImage
+*.deb
+*.rpm
+*.pacman
+*.flatpak
+SHA256SUMS.txt
+.flatpak-builder/

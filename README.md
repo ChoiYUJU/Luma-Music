@@ -2,48 +2,64 @@
   <img src="assets/branding/luma-music-logo.png" width="112" alt="Luma Music logo">
 </p>
 
-<h1 align="center">Luma Music</h1>
+<h1 align="center">Luma Music Max</h1>
 
 <p align="center">Musik lokal. Mendengarkan dengan lebih dekat.</p>
 
-**Luma Music 2.0.0** adalah pemutar musik desktop open-source untuk koleksi audio milikmu sendiri. Arah pengalaman belajarnya mengambil inspirasi dari navigasi koleksi Spotify dan tampilan artwork-first Apple Music, tetapi tetap memakai identitas Luma: logo equalizer mint asli, antarmuka glass yang tenang, dan pendekatan local-first tanpa akun, iklan, telemetri, atau katalog streaming palsu.
+<p align="center">
+  <a href="https://github.com/ChoiYuju/Luma-Music/releases/latest"><strong>Download Luma Music Max</strong></a>
+  &nbsp;·&nbsp; <a href="docs/INSTALLING.md">Panduan instalasi tanpa Terminal</a>
+</p>
+
+**Luma Music Max 3.3.1 — User Install Preview** adalah pemutar musik lokal open-source dengan tampilan Glass, perpustakaan cover-forward, Smart Playlist, dan paket instalasi untuk Linux serta Windows.
+
+> **Status:** source dan alur packaging disiapkan untuk preview. Setelah maintainer menerbitkan GitHub Release yang sudah dibangun dan diuji, pengguna cukup mengunduh paket dari halaman [Releases](https://github.com/ChoiYuju/Luma-Music/releases/latest); mereka tidak perlu memasang Node.js atau membuka Terminal. Sebelum artefak pertama dipublikasikan, halaman Releases mungkin belum memiliki installer.
 
 - **Lisensi:** MIT
 - **Teknologi:** JavaScript, HTML/CSS, Electron
-- **Node.js untuk pengembangan:** 22 atau lebih baru
-- **Platform target:** Linux desktop; konfigurasi paket Windows NSIS juga tersedia untuk diuji
-- **Privasi:** riwayat, statistik, smart playlist, dan mix disimpan lokal
+- **Target build awal:** Linux x86_64 dan Windows x64
+- **Privasi:** local-first; tidak ada akun, iklan, telemetry, koneksi streaming, atau unggahan riwayat
+- **Logo:** memakai file equalizer mint asli dari pemilik proyek tanpa modifikasi
 
-## Yang baru di 2.0
+## Instalasi untuk pengguna (tanpa Terminal)
+
+Buka **[GitHub Releases](https://github.com/ChoiYuju/Luma-Music/releases/latest)** setelah versi yang diuji diterbitkan, lalu pilih satu paket sesuai sistem:
+
+| Sistem | Pilih berkas | Cara memasang |
+|---|---|---|
+| Windows 10/11 x64 | `Luma-Music-Max-Setup-*.exe` | Klik dua kali, ikuti wizard, lalu buka dari Start Menu |
+| Windows tanpa instalasi | `Luma-Music-Max-Portable-*.exe` | Klik dua kali; data tetap disimpan sesuai perilaku aplikasi |
+| Linux Mint / Ubuntu / Debian | `Luma-Music-Max-*.deb` | Klik dua kali untuk membuka Software Manager / installer paket |
+| Fedora / RHEL / openSUSE | `Luma-Music-Max-*.rpm` | Buka dengan software installer grafis distro |
+| Banyak distro Linux x86_64 | `Luma-Music-Max-*.AppImage` | Klik kanan → Properties → Permissions → izinkan file dijalankan, lalu klik dua kali |
+
+Lihat [panduan instalasi bergambar berbasis GUI](docs/INSTALLING.md) dan [format serta batas kompatibilitas](docs/PORTABILITY.md). Windows installer saat ini mungkin belum ditandatangani secara digital; periksa bahwa file berasal dari repositori resmi dan cocok dengan checksum rilis.
+
+**Penting:** source-code ZIP bukan installer. Jika Releases belum memiliki aset `.exe`, `.AppImage`, `.deb`, atau `.rpm`, tunggu sampai workflow build selesai dan maintainer memublikasikan release yang telah diuji.
+
+## Pengalaman dan fitur
 
 ### Pengalaman mendengarkan
-
-- Mode **Sedang Diputar** immersive/fullscreen dengan sampul album besar dan latar artwork buram.
-- Kontrol playback SVG yang konsisten, seek, shuffle, tiga mode repeat, favorit, volume, lirik, equalizer, dan antrean.
-- Antrean dapat diubah urutannya dengan kontrol naik/turun untuk lagu berikutnya; lagu aktif tidak dipindahkan oleh kontrol tersebut.
-- Timer tidur berdasarkan durasi atau akhir lagu.
-- **Local Autoplay** opsional untuk melanjutkan lagu serupa hanya dari perpustakaan lokal.
+- Now Playing imersif/fullscreen dengan artwork besar dan latar blur.
+- Kontrol playback SVG, seek, shuffle, repeat, favorit, volume, lirik, equalizer, dan antrean yang dapat disusun ulang.
+- Timer tidur dan autoplay opsional dari koleksi sendiri.
+- Riwayat lokal, play counts, perkiraan waktu mendengarkan, serta Luma Replay.
 
 ### Perpustakaan dan personalisasi
+- Scan folder/subfolder, metadata dan artwork tertanam/lokal, halaman album/artis, pencarian dan pengurutan.
+- Smart Playlist dengan kondisi ALL/ANY, rating pribadi, favorit, tahun, tanggal ditambahkan/terakhir diputar, durasi, bitrate dan jumlah pemutaran.
+- Playlist manual dan folder playlist, impor/ekspor M3U/M3U8.
+- Beranda dan Semua Lagu menggunakan grid cover, dengan tampilan daftar sebagai pilihan alternatif.
+- Tema Dark / Light / System dan pilihan Glass / Solid.
 
-- Pemindaian folder dan subfolder, cache metadata/artwork, halaman album/artis, pencarian, favorit, dan playlist manual.
-- Pengurutan lagu berdasarkan judul, artis, album, tahun, waktu ditambahkan, jumlah pemutaran, dan durasi.
-- **Playlist Pintar**: buat playlist dinamis dengan aturan artis, album, genre, favorit, tahun, jumlah pemutaran, waktu terakhir diputar, waktu ditambahkan, durasi, atau bitrate. Aturan bisa dicocokkan sebagai semua (ALL) atau salah satu (ANY).
-- Koleksi pintar siap pakai: Mix untukmu, Baru ditambahkan, Baru diputar, Paling sering diputar, dan Luma Replay.
-- Riwayat lokal, jumlah sesi pemutaran, serta perkiraan waktu mendengarkan.
-- Impor dan ekspor playlist M3U/M3U8.
+### Metadata, backup, dan privasi
+- Edit judul, artis, album, genre, tahun, serta nomor track sebagai override lokal Luma. File audio asli dan tag tertanam tidak ditulis ulang.
+- Backup/restore JSON untuk pengaturan, favorit, playlist, rating, override dan statistik. File audio tidak dimasukkan ke backup.
+- Artwork gagal muat akan beralih ke placeholder Luma; scanner dapat mencari cover image lokal di folder album.
 
-### Fitur audio
+## Untuk kontributor dan maintainer
 
-- Metadata umum termasuk judul, artis, album, genre, tahun, durasi, bitrate, sample rate, bit depth, dan artwork tertanam jika tersedia.
-- Lirik lokal `.lrc` / `.txt` di samping file audio; tidak ada pengunduhan lirik otomatis.
-- Equalizer 10-band dengan preset dan preamp melalui Web Audio.
-- Tema Glass dan Solid untuk perangkat yang kurang nyaman dengan blur.
-
-## Memulai di Linux Mint / Ubuntu
-
-1. Pasang Node.js 22 atau lebih baru. NVM bisa dipakai untuk menyimpan beberapa versi Node.js berdampingan.
-2. Ekstrak source code, buka terminal di folder `luma-music`, lalu jalankan:
+Membangun dari source membutuhkan Node.js 22+:
 
 ```bash
 npm install
@@ -51,76 +67,42 @@ npm test
 npm start
 ```
 
-3. Di aplikasi, pilih **Impor musik** dan arahkan ke folder koleksi lokal.
-4. Buat playlist pintar lewat tombol `+` di bagian **Playlist Pintar** pada sidebar. Tambahkan aturan seperti `Artis memuat Yuju`, `Favorit adalah Favorit`, atau `Jumlah pemutaran minimal 3`.
-
-## Build Linux
-
-Setelah dependensi terpasang:
+Build manual dilakukan di OS target:
 
 ```bash
-npm run dist
+npm run dist:linux:release
 ```
-
-File `.deb` dan AppImage akan dibuat di `release/`. Pilihan per format:
-
-```bash
-npm run dist:deb
-npm run dist:appimage
-```
-
-## Build Windows
-
-Konfigurasi installer NSIS tersedia untuk Windows x64. Bangun pada mesin Windows atau CI Windows setelah memasang dependensi:
 
 ```powershell
-npm install
-npm test
-npm run dist:win
+npm.cmd run dist:win:release
 ```
 
-Hasil build akan ada di `release/`. Konfigurasi target bukan bukti bahwa installer sudah diuji; jalankan dan tes hasilnya pada Windows sungguhan sebelum membagikannya.
+Hasil build berada di `release/`. Pengguna biasa tidak perlu menjalankan perintah-perintah ini; maintainer memakai workflow GitHub Actions untuk membangun dan menyusun draft Release.
 
-## Pintasan utama
+## Status build dan rilis
 
-| Pintasan | Fungsi |
-|---|---|
-| `Ctrl+O` | Impor folder musik |
-| `Ctrl+K` | Fokus pencarian |
-| `Ctrl+1`–`Ctrl+6` | Navigasi utama |
-| `F` | Buka/tutup fullscreen ketika halaman Sedang Diputar aktif |
-| `Esc` | Keluar dari fullscreen |
-| `Spasi` | Putar/jeda ketika fokus bukan pada input/kontrol |
-| `Alt+←` / `Alt+→` | Lagu sebelumnya/berikutnya |
-| `←` / `→` | Mundur/maju 5 detik ketika tidak mengetik |
-| `M` | Senyap/pulihkan volume |
-| `L` | Lirik lokal |
-| `E` | Equalizer |
-| `Q` | Antrean lagu |
-| `Ctrl+Shift+O` | Impor M3U |
+Pengguna tidak perlu Terminal setelah installer tersedia. Maintainer membangun paket, menguji draft release, lalu menerbitkan installer untuk pengguna di halaman [Releases](https://github.com/ChoiYuju/Luma-Music/releases/latest).
 
-Menu native juga menyediakan navigasi, pemutaran, timer tidur, pengaturan, dan pembuatan playlist pintar.
-
-## Privasi dan data playlist
-
-Luma tidak mengunggah riwayat atau statistik mendengarkan ke server. Statistik tersimpan di penyimpanan lokal aplikasi. **Ekspor M3U menggunakan path file lokal** agar playlist mudah dipakai di mesin yang sama; periksa berkas hasil ekspor sebelum membagikannya, karena path dapat mengungkap struktur folder di komputermu.
+- `.github/workflows/ci.yml` menjalankan tes source di Linux dan Windows.
+- `.github/workflows/build-packages.yml` membangun artefak utama di runner Linux/Windows saat tag versi `v*` didorong, atau melalui tombol **Run workflow** di GitHub Actions. Isi `release_tag` (contoh `v3.3.1`) untuk menyusun draft Release otomatis; kosongkan untuk build percobaan.
+- Workflow membuat **draft GitHub Release** beserta `SHA256SUMS.txt`. Maintainer harus mengunduh dan menguji paket di sistem nyata sebelum menekan **Publish release**.
+- Format utama yang dirilis: Linux AppImage, DEB, RPM, tar.gz; Windows Setup EXE, portable EXE, ZIP.
+- Pacman dan Flatpak tersedia sebagai jalur eksperimental, bukan pilihan installer utama sampai diuji di distro target.
 
 ## Batasan yang diketahui
 
-- Luma adalah pemutar koleksi lokal, bukan klien katalog streaming. Spotify DJ, radio berlisensi, sinkronisasi cloud, rekomendasi online, dan playlist kolaboratif tidak disimulasikan.
-- Local Mix dan Local Autoplay adalah heuristik sederhana di perangkat, bukan model rekomendasi cloud.
-- Statistik waktu mendengarkan adalah perkiraan dari aktivitas playback; bukan laporan durasi dengar tersertifikasi.
-- Equalizer memakai Web Audio, sehingga bukan jalur bit-perfect dan tidak memberi akses audio eksklusif.
-- Gapless playback yang terjamin, crossfade antarfile yang sebenarnya, ReplayGain/EBU R128, pengeditan tag, dukungan CUE sebagai trek virtual, dan integrasi MPRIS2/D-Bus belum dinyatakan tersedia.
-- Build runtime Electron dan audio perlu diuji secara manual untuk setiap target platform sebelum publikasi rilis.
+- Ini adalah pemutar file lokal, bukan layanan streaming berlisensi atau pengganti penuh Spotify/Apple Music. Tidak ada akun/cloud sync, katalog streaming, radio berlisensi, atau rekomendasi server.
+- Gapless playback terjamin, crossfade antarfile, ReplayGain/EBU R128, CUE virtual tracks, dan integrasi MPRIS2/D-Bus belum diklaim tersedia.
+- Target awal adalah x86_64. ARM64, Alpine/musl, dan versi Linux lama tidak dijanjikan kompatibel sebelum dibuat serta diuji secara terpisah.
+- Versi saat ini tetap Preview sampai packaging dan runtime audio diuji pada Linux dan Windows.
 
-## Dokumentasi proyek
-
-- [Riset fitur Spotify / Apple Music](docs/FEATURE_RESEARCH.md)
+## Dokumentasi
+- [Panduan instalasi pengguna](docs/INSTALLING.md)
+- [Panduan portabilitas](docs/PORTABILITY.md)
+- [Checklist rilis maintainer](docs/RELEASE_CHECKLIST.md)
+- [Riset fitur](docs/FEATURE_RESEARCH.md)
 - [Roadmap](FEATURE_ROADMAP.md)
 - [Laporan QA](QA_REPORT.md)
 - [Changelog](CHANGELOG.md)
 - [Panduan kontribusi](CONTRIBUTING.md)
 - [Kebijakan keamanan](SECURITY.md)
-
-Laporan bug sebaiknya menyertakan sistem operasi, versi Node.js/Electron, jenis file audio, serta pesan error. Jangan mengirimkan file musik pribadi atau informasi path sensitif.

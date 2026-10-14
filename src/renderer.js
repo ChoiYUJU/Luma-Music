@@ -1,6 +1,7 @@
 'use strict';
 
 const $ = (selector, root = document) => root.querySelector(selector);
+document.addEventListener('error', handleCoverLoadFailure, true);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const audio = $('#audio-engine');
 const content = $('#content');
@@ -33,10 +34,13 @@ const SMART_PLAYLIST_FIELDS = {
   'last-played-days': { label: 'Terakhir diputar', type: 'number', operators: [['within-last', 'dalam hari terakhir']] },
   'added-days': { label: 'Ditambahkan', type: 'number', operators: [['within-last', 'dalam hari terakhir']] },
   'duration-minutes': { label: 'Durasi (menit)', type: 'number', operators: [['at-least', 'minimal'], ['at-most', 'maksimal']] },
-  'bitrate-kbps': { label: 'Bitrate (kb/s)', type: 'number', operators: [['at-least', 'minimal'], ['at-most', 'maksimal']] }
+  'bitrate-kbps': { label: 'Bitrate (kb/s)', type: 'number', operators: [['at-least', 'minimal'], ['at-most', 'maksimal']] },
+  rating: { label: 'Rating pribadi', type: 'number', operators: [['is', 'sama dengan'], ['at-least', 'minimal'], ['at-most', 'maksimal']] }
 };
 
 let library = { folder: null, tracks: [], scannedAt: null };
+let originalTrackById = new Map();
+let editingTrackId = null;
 let currentView = 'home';
 let currentPlaylist = null;
 let currentAlbumKey = null;
@@ -74,8 +78,33 @@ repeatMode = appState.repeatMode;
 
 function hydrateLibrary(data) {
   const covers = data?.covers && typeof data.covers === 'object' ? data.covers : {};
-  const tracks = Array.isArray(data?.tracks) ? data.tracks.map(track => ({ ...track, cover: track.cover || (track.coverId ? covers[track.coverId] : null) || null })) : [];
+  originalTrackById = new Map();
+  const tracks = Array.isArray(data?.tracks) ? data.tracks.map(track => {
+    const base = { ...track, cover: track.cover || (track.coverId ? covers[track.coverId] : null) || null };
+    originalTrackById.set(base.id, { ...base });
+    const override = appState?.metadataOverrides?.[base.id];
+    return override && typeof override === 'object' ? { ...base, ...override } : base;
+  }) : [];
   return { folder: typeof data?.folder === 'string' ? data.folder : null, tracks, covers, scannedAt: data?.scannedAt || null };
+}
+
+const TRACK_OVERRIDE_FIELDS = ['title', 'artist', 'albumArtist', 'album', 'genre', 'year', 'trackNo'];
+function sanitizeMetadataOverrides(source) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return {};
+  const result = {};
+  for (const [id, raw] of Object.entries(source).slice(0, 50000)) {
+    if (typeof id !== 'string' || !raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const entry = {};
+    for (const field of ['title', 'artist', 'albumArtist', 'album', 'genre']) {
+      if (typeof raw[field] === 'string' && raw[field].trim()) entry[field] = raw[field].trim().slice(0, 240);
+    }
+    for (const field of ['year', 'trackNo']) {
+      const value = Number(raw[field]);
+      if (raw[field] !== '' && raw[field] != null && Number.isInteger(value) && value >= 0 && value <= (field === 'year' ? 3000 : 9999)) entry[field] = value;
+    }
+    if (Object.keys(entry).length) result[id] = entry;
+  }
+  return result;
 }
 
 function loadAppState() {
@@ -83,7 +112,10 @@ function loadAppState() {
     const data = JSON.parse(localStorage.getItem('luma-music-state') || '{}');
     return {
       favorites: Array.isArray(data.favorites) ? data.favorites.filter(item => typeof item === 'string') : [],
-      playlists: Array.isArray(data.playlists) ? data.playlists.filter(p => p && typeof p.name === 'string' && Array.isArray(p.ids)).map(p => ({ name: p.name, ids: p.ids.filter(id => typeof id === 'string') })) : [],
+      playlists: Array.isArray(data.playlists) ? data.playlists.filter(p => p && typeof p.name === 'string' && Array.isArray(p.ids)).map(p => ({ name: p.name.slice(0, 80), folder: typeof p.folder === 'string' ? p.folder.trim().slice(0, 64) : '', ids: p.ids.filter(id => typeof id === 'string').slice(0, 100000) })) : [],
+      playlistFolders: Array.isArray(data.playlistFolders) ? [...new Set(data.playlistFolders.filter(folder => typeof folder === 'string' && folder.trim()).map(folder => folder.trim().slice(0, 64)))].slice(0, 100) : [],
+      ratings: data.ratings && typeof data.ratings === 'object' && !Array.isArray(data.ratings) ? Object.fromEntries(Object.entries(data.ratings).filter(([id, rating]) => typeof id === 'string' && Number.isInteger(rating) && rating >= 0 && rating <= 5).slice(0, 50000)) : {},
+      metadataOverrides: sanitizeMetadataOverrides(data.metadataOverrides),
       smartPlaylists: Array.isArray(data.smartPlaylists) ? data.smartPlaylists.filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && Array.isArray(p.rules)).slice(0, 200).map(p => ({ id: p.id, name: p.name.slice(0, 64), match: p.match === 'any' ? 'any' : 'all', rules: p.rules.filter(rule => rule && Object.hasOwn(SMART_PLAYLIST_FIELDS, rule.field) && typeof rule.operator === 'string').slice(0, 20).map(rule => ({ field: rule.field, operator: rule.operator, value: String(rule.value ?? '').slice(0, 120) })) })) : [],
       volume: Number.isFinite(data.volume) ? Math.min(1, Math.max(0, data.volume)) : 0.78,
       lastTrack: typeof data.lastTrack === 'string' ? data.lastTrack : null,
@@ -94,15 +126,17 @@ function loadAppState() {
       eqBands: Array.isArray(data.eqBands) && data.eqBands.length === 10 ? data.eqBands.map(v => Number.isFinite(v) ? Math.max(-12, Math.min(12, v)) : 0) : [...EQ_PRESETS.Flat.bands],
       eqPreamp: Number.isFinite(data.eqPreamp) ? Math.max(-12, Math.min(12, data.eqPreamp)) : 0,
       material: data.material === 'solid' ? 'solid' : 'glass',
+      theme: ['dark', 'light', 'system'].includes(data.theme) ? data.theme : 'dark',
+      songsLayout: data.songsLayout === 'list' ? 'list' : 'grid',
       playHistory: Array.isArray(data.playHistory) ? data.playHistory.filter(item => item && typeof item.id === 'string' && Number.isFinite(item.at)).slice(0, 500) : [],
       playCounts: data.playCounts && typeof data.playCounts === 'object' && !Array.isArray(data.playCounts) ? Object.fromEntries(Object.entries(data.playCounts).filter(([id, count]) => typeof id === 'string' && Number.isFinite(count) && count >= 0).slice(0, 50000).map(([id, count]) => [id, Math.floor(count)])) : {},
       addedAt: data.addedAt && typeof data.addedAt === 'object' && !Array.isArray(data.addedAt) ? Object.fromEntries(Object.entries(data.addedAt).filter(([id, at]) => typeof id === 'string' && Number.isFinite(at)).slice(0, 50000)) : {},
       listenSeconds: data.listenSeconds && typeof data.listenSeconds === 'object' && !Array.isArray(data.listenSeconds) ? Object.fromEntries(Object.entries(data.listenSeconds).filter(([id, seconds]) => typeof id === 'string' && Number.isFinite(seconds) && seconds >= 0).slice(0, 50000).map(([id, seconds]) => [id, Math.floor(seconds)])) : {},
       autoContinue: Boolean(data.autoContinue),
-      sortMode: ['library', 'title', 'artist', 'album', 'year', 'recently-added', 'most-played', 'duration'].includes(data.sortMode) ? data.sortMode : 'library'
+      sortMode: ['library', 'title', 'artist', 'album', 'year', 'recently-added', 'most-played', 'duration', 'rating'].includes(data.sortMode) ? data.sortMode : 'library'
     };
   } catch {
-    return { favorites: [], playlists: [], smartPlaylists: [], volume: 0.78, lastTrack: null, lastTime: 0, shuffle: false, repeatMode: 0, eqPreset: 'Flat', eqBands: [...EQ_PRESETS.Flat.bands], eqPreamp: 0, material: 'glass', playHistory: [], playCounts: {}, addedAt: {}, listenSeconds: {}, autoContinue: false, sortMode: 'library' };
+    return { favorites: [], playlists: [], playlistFolders: [], ratings: {}, metadataOverrides: {}, smartPlaylists: [], volume: 0.78, lastTrack: null, lastTime: 0, shuffle: false, repeatMode: 0, eqPreset: 'Flat', eqBands: [...EQ_PRESETS.Flat.bands], eqPreamp: 0, material: 'glass', theme: 'dark', songsLayout: 'grid', playHistory: [], playCounts: {}, addedAt: {}, listenSeconds: {}, autoContinue: false, sortMode: 'library' };
   }
 }
 
@@ -111,6 +145,9 @@ function saveAppState() {
     localStorage.setItem('luma-music-state', JSON.stringify({
       favorites: appState.favorites,
       playlists: appState.playlists,
+      playlistFolders: appState.playlistFolders,
+      ratings: appState.ratings,
+      metadataOverrides: appState.metadataOverrides,
       smartPlaylists: appState.smartPlaylists,
       volume: appState.volume,
       lastTrack: appState.lastTrack,
@@ -121,6 +158,8 @@ function saveAppState() {
       eqBands: appState.eqBands,
       eqPreamp: appState.eqPreamp,
       material: appState.material,
+      theme: appState.theme,
+      songsLayout: appState.songsLayout,
       playHistory: appState.playHistory.slice(0, 500),
       playCounts: appState.playCounts,
       addedAt: appState.addedAt,
@@ -155,7 +194,14 @@ const CONTROL_ICON_PATHS = {
   'chevron-down': '<path d="m6 10 6 6 6-6"/>',
   lyrics: '<path d="M8 5h12"/><path d="M8 9h12"/><path d="M8 13h8"/><path d="M4 5h.01"/><path d="M4 9h.01"/><path d="M4 13h.01"/><path d="M4 17h9"/>',
   equalizer: '<path d="M4 6v12"/><path d="M12 4v16"/><path d="M20 8v8"/><path d="M1.8 10h4.4"/><path d="M9.8 14h4.4"/><path d="M17.8 11h4.4"/>',
-  fullscreen: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/>'
+  fullscreen: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/>', 
+  star: '<path d="m12 3 2.75 5.58 6.16.9-4.45 4.33 1.05 6.13L12 17.05l-5.51 2.89 1.05-6.13L3.09 9.48l6.16-.9L12 3Z"/>', 
+  'star-filled': '<path d="m12 3 2.75 5.58 6.16.9-4.45 4.33 1.05 6.13L12 17.05l-5.51 2.89 1.05-6.13L3.09 9.48l6.16-.9L12 3Z" fill="currentColor" stroke="none"/>', 
+  playlist: '<path d="M9 6h12M9 12h12M9 18h8"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>', 
+  folder: '<path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H10l2 2h7.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>',
+  grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
+  list: '<path d="M9 6h12M9 12h12M9 18h12"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>'
 };
 
 function iconMarkup(name, size = 18) {
@@ -215,10 +261,12 @@ function favoriteButton(trackId, compact = false) {
   return `<button class="row-action ${liked ? 'liked' : ''}" data-action="favorite" data-id="${escapeHtml(trackId)}" title="${liked ? 'Hapus dari favorit' : 'Tambah ke favorit'}" aria-label="${liked ? 'Hapus dari favorit' : 'Tambah ke favorit'}">${iconMarkup(liked ? 'heart-filled' : 'heart', 16)}</button>`;
 }
 
+function coverGlyphMarkup() { return '<span class="cover-glyph-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>'; }
+
 function coverMarkup(track, className = 'track-thumb') {
   const cover = track?.cover;
-  if (cover) return `<div class="${className}"><img src="${escapeHtml(cover)}" alt="Sampul ${escapeHtml(track.album || track.title)}"></div>`;
-  return `<div class="${className} cover-placeholder"><span>♫</span></div>`;
+  if (cover) return `<div class="${className}"><img data-cover-image src="${escapeHtml(cover)}" alt="Sampul ${escapeHtml(track.album || track.title)}" loading="lazy" decoding="async"></div>`;
+  return `<div class="${className} cover-placeholder">${coverGlyphMarkup()}</div>`;
 }
 
 function getTrackById(id) {
@@ -237,6 +285,11 @@ function allIndexes(tracks) {
 
 function trackPlayCount(trackId) {
   return Number(appState.playCounts[trackId]) || 0;
+}
+
+function trackRating(trackId) {
+  const value = Number(appState.ratings?.[trackId]);
+  return Number.isInteger(value) && value >= 0 && value <= 5 ? value : 0;
 }
 
 function normalizeSmartRule(rule) {
@@ -293,6 +346,7 @@ function smartRuleMatches(track, rule, latestPlayed = null, now = Date.now()) {
     case 'genre': return compareText(track.genre);
     case 'year': return compareNumber(Number(track.year) || 0);
     case 'play-count': return compareNumber(trackPlayCount(track.id));
+    case 'rating': return compareNumber(trackRating(track.id));
     case 'last-played-days': {
       const timestamp = latestPlayed?.get(track.id);
       return Boolean(timestamp && now - timestamp <= Number(value) * 86400000);
@@ -537,9 +591,11 @@ function updateSidebar() {
   $('#library-status-title').textContent = library.tracks.length ? `${library.tracks.length} lagu tersedia` : 'Perpustakaan lokal';
   $('#library-status-detail').textContent = library.folder ? shortenPath(library.folder) : 'Belum ada folder musik';
   $('#settings-folder').textContent = library.folder || 'Belum ada folder musik yang dipilih.';
-  playlistNav.innerHTML = appState.playlists.map(playlist => `
-    <button class="playlist-item ${currentView === 'playlist' && currentPlaylist === playlist.name ? 'active' : ''}" data-playlist="${escapeHtml(playlist.name)}" title="${escapeHtml(playlist.name)}"><span>♫</span><span>${escapeHtml(playlist.name)}</span></button>
-  `).join('');
+  const folderNames = [...new Set(appState.playlists.map(playlist => playlist.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const playlistButton = playlist => `<button class="playlist-item ${currentView === 'playlist' && currentPlaylist === playlist.name ? 'active' : ''}" data-playlist="${escapeHtml(playlist.name)}" title="${escapeHtml(playlist.name)}"><span>${iconMarkup('playlist', 14)}</span><span>${escapeHtml(playlist.name)}</span></button>`;
+  const unfiled = appState.playlists.filter(playlist => !playlist.folder).map(playlistButton).join('');
+  const foldersMarkup = folderNames.map(folder => `<div class="playlist-folder-label">${iconMarkup('folder', 13)}<span>${escapeHtml(folder)}</span></div>${appState.playlists.filter(playlist => playlist.folder === folder).map(playlistButton).join('')}`).join('');
+  playlistNav.innerHTML = unfiled + foldersMarkup;
   smartPlaylistNav.innerHTML = appState.smartPlaylists.map(playlist => `
     <button class="playlist-item smart-playlist-item ${currentView === 'smart-playlist' && currentSmartPlaylistId === playlist.id ? 'active' : ''}" data-smart-playlist="${escapeHtml(playlist.id)}" title="${escapeHtml(playlist.name)}"><span>${iconMarkup('equalizer', 14)}</span><span>${escapeHtml(playlist.name)}</span></button>
   `).join('');
@@ -558,7 +614,7 @@ function pageHeading(title, eyebrow, description, extra = '') {
 }
 
 function emptyState(title = 'Belum ada musik di sini', description = 'Pilih folder yang berisi file audio untuk mulai membangun perpustakaan musikmu.') {
-  return `<div class="empty-state"><div class="empty-icon">♫</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p><button class="primary-button" data-action="import-folder">＋ Impor folder musik</button></div>`;
+  return `<div class="empty-state"><div class="empty-icon">${coverGlyphMarkup()}</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(description)}</p><button class="primary-button" data-action="import-folder">＋ Impor folder musik</button></div>`;
 }
 
 function albumGroups(tracks) {
@@ -590,8 +646,8 @@ function albumCard(group, index, artistMode = false) {
   const title = artistMode ? group.artistName : group.album;
   const subtitle = artistMode ? `${count} lagu` : group.artist;
   const body = cover
-    ? `<img src="${escapeHtml(cover)}" alt="Sampul ${escapeHtml(title)}">`
-    : `<div class="fallback-cover palette-${index % 5}">${artistMode ? escapeHtml((title || '?').slice(0, 1).toUpperCase()) : '♫'}</div>`;
+    ? `<img data-cover-image src="${escapeHtml(cover)}" alt="Sampul ${escapeHtml(title)}" loading="lazy" decoding="async">`
+    : `<div class="fallback-cover palette-${index % 5}">${artistMode ? `<span class="fallback-initial">${escapeHtml((title || '?').slice(0, 1).toUpperCase())}</span>` : coverGlyphMarkup()}</div>`;
   const cardClass = artistMode ? 'artist-card' : 'album-card';
   if (artistMode) {
     return `<button class="${cardClass}" data-action="open-artist" data-artist="${escapeHtml(group.artistName)}"><div class="artist-avatar palette-${index % 5}">${body.includes('<img') ? body : escapeHtml((title || '?').slice(0, 1).toUpperCase())}</div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(subtitle)}</small></button>`;
@@ -612,14 +668,42 @@ function trackListMarkup(tracks, title = 'Daftar lagu', subtitle = '', playlistM
     const trackNo = track.trackNo ? String(track.trackNo).padStart(2, '0') : String(visibleIndex + 1).padStart(2, '0');
     return `<tr class="track-row ${playing ? 'playing' : ''}" data-action="play-track" data-list-ids="${listIds}" data-idx="${index}" data-track-id="${escapeHtml(track.id)}" tabindex="0" aria-label="Putar ${escapeHtml(track.title)}">
       <td>${playing && !audio.paused ? '♫' : trackNo}</td>
-      <td class="track-title-cell"><div class="track-main">${coverMarkup(track)}<div class="track-text"><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artist)}</span></div></div></td>
+      <td class="track-title-cell"><div class="track-main">${coverMarkup(track)}<div class="track-text"><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artist)}</span><button class="track-rating-control" data-action="edit-track" data-id="${escapeHtml(track.id)}" title="Ubah info dan rating lagu" aria-label="Ubah info dan rating ${escapeHtml(track.title)}">${iconMarkup(trackRating(track.id) ? 'star-filled' : 'star', 12)} ${trackRating(track.id) ? `${trackRating(track.id)}/5` : 'Beri rating'}</button></div></div></td>
       <td title="${escapeHtml(track.album)}">${escapeHtml(track.album)}</td>
       <td>${escapeHtml(track.year || track.ext || '—')}</td>
       <td><div class="track-actions">${favoriteButton(track.id)}${playlistMode ? `<button class="row-action" data-action="remove-playlist-track" data-id="${escapeHtml(track.id)}" title="Hapus dari playlist" aria-label="Hapus dari playlist">−</button>` : `<button class="row-action" data-action="add-playlist" data-id="${escapeHtml(track.id)}" title="Tambah ke playlist" aria-label="Tambah ke playlist">＋</button>`}<span class="duration-cell" title="${escapeHtml([track.bitrate ? `${Math.round(track.bitrate / 1000)} kb/s` : '', track.sampleRate ? `${(track.sampleRate / 1000).toFixed(1)} kHz` : '', track.bitsPerSample ? `${track.bitsPerSample}-bit` : '', track.lossless === true ? 'Lossless' : ''].filter(Boolean).join(' · '))}">${formatTime(track.duration)}</span></div></td>
     </tr>`;
   }).join('');
-  const sortControl = sortableView ? `<label class="sort-control"><span>Urutkan</span><select id="track-sort" aria-label="Urutkan lagu"><option value="library" ${appState.sortMode === 'library' ? 'selected' : ''}>Urutan koleksi</option><option value="title" ${appState.sortMode === 'title' ? 'selected' : ''}>Judul</option><option value="artist" ${appState.sortMode === 'artist' ? 'selected' : ''}>Artis</option><option value="album" ${appState.sortMode === 'album' ? 'selected' : ''}>Album</option><option value="year" ${appState.sortMode === 'year' ? 'selected' : ''}>Tahun terbaru</option><option value="recently-added" ${appState.sortMode === 'recently-added' ? 'selected' : ''}>Baru ditambahkan</option><option value="most-played" ${appState.sortMode === 'most-played' ? 'selected' : ''}>Paling sering diputar</option><option value="duration" ${appState.sortMode === 'duration' ? 'selected' : ''}>Durasi</option></select></label>` : '';
+  const sortControl = sortableView ? `<label class="sort-control"><span>Urutkan</span><select id="track-sort" aria-label="Urutkan lagu"><option value="library" ${appState.sortMode === 'library' ? 'selected' : ''}>Urutan koleksi</option><option value="title" ${appState.sortMode === 'title' ? 'selected' : ''}>Judul</option><option value="artist" ${appState.sortMode === 'artist' ? 'selected' : ''}>Artis</option><option value="album" ${appState.sortMode === 'album' ? 'selected' : ''}>Album</option><option value="year" ${appState.sortMode === 'year' ? 'selected' : ''}>Tahun terbaru</option><option value="recently-added" ${appState.sortMode === 'recently-added' ? 'selected' : ''}>Baru ditambahkan</option><option value="most-played" ${appState.sortMode === 'most-played' ? 'selected' : ''}>Paling sering diputar</option><option value="duration" ${appState.sortMode === 'duration' ? 'selected' : ''}>Durasi</option><option value="rating" ${appState.sortMode === 'rating' ? 'selected' : ''}>Rating tertinggi</option></select></label>` : '';
   return `<div class="track-section"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : `<p>${displayTracks.length} lagu</p>`}</div><div class="track-section-tools">${sortControl}<button class="subtle-button" data-action="play-current-list" data-list-ids="${listIds}">${iconMarkup('play', 14)} Putar semua</button></div></div><table class="track-table"><thead><tr><th>#</th><th>JUDUL</th><th>ALBUM</th><th>TAHUN</th><th class="align-right">DURASI</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function trackCardGridMarkup(tracks, title = 'Lagu', subtitle = '', options = {}) {
+  const displayTracks = options.sortable ? sortedTracks(tracks) : tracks;
+  if (!displayTracks.length) {
+    return options.showHeader === false ? emptyState('Belum ada lagu', 'Impor musik untuk menampilkan cover dan detail lagu.') : `<section class="track-card-section"><div class="section-heading"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}</div></div>${emptyState('Belum ada lagu', 'Impor musik untuk menampilkan cover dan detail lagu.')}</section>`;
+  }
+  const visibleIndexes = allIndexes(displayTracks);
+  const listIds = escapeHtml(displayTracks.map(track => track.id).join(','));
+  const cards = displayTracks.map((track, i) => {
+    const index = visibleIndexes[i];
+    const playing = track.id === activeTrackId;
+    const image = track.cover
+      ? `<img data-cover-image src="${escapeHtml(track.cover)}" alt="Sampul ${escapeHtml(track.album || track.title)}" loading="lazy" decoding="async">`
+      : `<div class="cover-placeholder">${coverGlyphMarkup()}</div>`;
+    return `<article class="track-card ${playing ? 'is-playing' : ''}" data-action="play-track" data-list-ids="${listIds}" data-idx="${index}" data-track-id="${escapeHtml(track.id)}" tabindex="0" aria-label="Putar ${escapeHtml(track.title)}">
+      <div class="track-card-art">${image}<button type="button" class="track-card-play" data-action="play-track" data-list-ids="${listIds}" data-idx="${index}" aria-label="Putar ${escapeHtml(track.title)}" title="Putar">${iconMarkup(track.id === activeTrackId && !audio.paused ? 'pause' : 'play', 19)}</button><button type="button" class="track-card-favorite ${isFavorite(track.id) ? 'liked' : ''}" data-action="favorite" data-id="${escapeHtml(track.id)}" aria-label="${isFavorite(track.id) ? 'Hapus dari favorit' : 'Tambah ke favorit'}" title="${isFavorite(track.id) ? 'Hapus dari favorit' : 'Tambah ke favorit'}">${iconMarkup(isFavorite(track.id) ? 'heart-filled' : 'heart', 15)}</button></div>
+      <div class="track-card-copy"><strong title="${escapeHtml(track.title)}">${escapeHtml(track.title)}</strong>${playing && !audio.paused ? '<span class="playing-equalizer" aria-label="Sedang diputar"><i></i><i></i><i></i><i></i></span>' : ''}<span title="${escapeHtml(track.artist)}">${escapeHtml(track.artist)}</span><small title="${escapeHtml(track.album)}">${escapeHtml(track.album)}</small></div>
+      <button type="button" class="track-card-add" data-action="add-playlist" data-id="${escapeHtml(track.id)}" title="Tambahkan ke playlist" aria-label="Tambahkan ${escapeHtml(track.title)} ke playlist">${iconMarkup('plus', 15)}</button>
+    </article>`;
+  }).join('');
+  const heading = options.showHeader === false ? '' : `<div class="section-heading track-card-heading"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : `<p>${displayTracks.length} lagu</p>`}</div>${options.playAll === false ? '' : `<button class="subtle-button" data-action="play-current-list" data-list-ids="${listIds}">${iconMarkup('play', 14)} Putar semua</button>`}</div>`;
+  return `<section class="track-card-section">${heading}<div class="track-card-grid">${cards}</div></section>`;
+}
+
+function songsLayoutActions() {
+  const sort = appState.songsLayout === 'grid' ? `<label class="sort-control songs-grid-sort"><span>Urutkan</span><select id="track-sort-grid" aria-label="Urutkan koleksi lagu"><option value="library" ${appState.sortMode === 'library' ? 'selected' : ''}>Urutan koleksi</option><option value="title" ${appState.sortMode === 'title' ? 'selected' : ''}>Judul</option><option value="artist" ${appState.sortMode === 'artist' ? 'selected' : ''}>Artis</option><option value="album" ${appState.sortMode === 'album' ? 'selected' : ''}>Album</option><option value="year" ${appState.sortMode === 'year' ? 'selected' : ''}>Tahun terbaru</option><option value="recently-added" ${appState.sortMode === 'recently-added' ? 'selected' : ''}>Baru ditambahkan</option><option value="most-played" ${appState.sortMode === 'most-played' ? 'selected' : ''}>Paling sering diputar</option><option value="duration" ${appState.sortMode === 'duration' ? 'selected' : ''}>Durasi</option><option value="rating" ${appState.sortMode === 'rating' ? 'selected' : ''}>Rating tertinggi</option></select></label>` : '';
+  return `${sort}<div class="songs-layout-actions" role="group" aria-label="Tata letak lagu"><button type="button" class="layout-toggle ${appState.songsLayout === 'grid' ? 'active' : ''}" data-action="set-songs-layout" data-layout="grid" title="Tampilan sampul" aria-label="Tampilan sampul">${iconMarkup('grid', 16)}</button><button type="button" class="layout-toggle ${appState.songsLayout === 'list' ? 'active' : ''}" data-action="set-songs-layout" data-layout="list" title="Tampilan daftar" aria-label="Tampilan daftar">${iconMarkup('list', 16)}</button></div>`;
 }
 
 function renderHome() {
@@ -633,11 +717,11 @@ function renderHome() {
   if (!hasLibrary) {
     return heading + `<section class="welcome-panel"><div class="welcome-icon">♫</div><div><h2>Mulai dari koleksi musikmu</h2><p>Pilih folder musik lokal untuk melihat lagu, album, artis, dan sampul yang tertanam dalam file audio.</p><button class="primary-button" data-action="import-folder">Pilih folder musik…</button></div></section>`;
   }
-  const continueCard = lastTrack ? `<section class="continue-panel"><div class="continue-art">${lastTrack.cover ? `<img src="${escapeHtml(lastTrack.cover)}" alt="">` : '<span>♫</span>'}</div><div class="continue-copy"><span class="small-label">TERAKHIR DIPUTAR</span><strong>${escapeHtml(lastTrack.title)}</strong><span>${escapeHtml(lastTrack.artist)} · ${escapeHtml(lastTrack.album)}</span></div><button class="play-button continue-play" data-action="resume-last" title="Putar lagu terakhir" aria-label="Putar lagu terakhir">${iconMarkup('play', 18)}</button></section>` : '';
+  const continueCard = lastTrack ? `<section class="continue-panel"><div class="continue-art">${lastTrack.cover ? `<img data-cover-image src="${escapeHtml(lastTrack.cover)}" alt="" loading="lazy" decoding="async">` : coverGlyphMarkup()}</div><div class="continue-copy"><span class="small-label">TERAKHIR DIPUTAR</span><strong>${escapeHtml(lastTrack.title)}</strong><span>${escapeHtml(lastTrack.artist)} · ${escapeHtml(lastTrack.album)}</span></div><button class="play-button continue-play" data-action="resume-last" title="Putar lagu terakhir" aria-label="Putar lagu terakhir">${iconMarkup('play', 18)}</button></section>` : '';
   const albumSection = albums.length ? `<div class="section-heading"><div><h2>Album</h2><p>Kelompokkan berdasarkan album di koleksimu</p></div><button class="subtle-button" data-action="show-albums">Lihat semua →</button></div><div class="featured-grid">${albums.map((album, i) => albumCard(album, i)).join('')}</div>` : '';
   const mixBanner = `<section class="home-mix-banner"><div class="home-mix-symbol">${iconMarkup('equalizer', 27)}</div><div><span class="eyebrow">LUMA PERSONAL MIX</span><h2>Putar sesuai seleramu</h2><p>Mix dari favorit, genre, dan riwayat lokal.</p></div><button class="primary-button" data-action="open-smart-mix">Dengarkan mix ${iconMarkup('next', 14)}</button></section>`;
-  const recentAddedSection = recentlyAdded.length ? trackListMarkup(recentlyAdded, 'Baru ditambahkan', 'Berdasarkan waktu pertama kali masuk ke perpustakaan') : '';
-  const recentPlayedSection = recentlyPlayed.length ? trackListMarkup(recentlyPlayed, 'Baru diputar', 'Lagu terakhir yang kamu dengarkan') : '';
+  const recentAddedSection = recentlyAdded.length ? trackCardGridMarkup(recentlyAdded, 'Baru ditambahkan', 'Berdasarkan waktu pertama kali masuk ke perpustakaan') : '';
+  const recentPlayedSection = recentlyPlayed.length ? trackCardGridMarkup(recentlyPlayed, 'Baru diputar', 'Lagu terakhir yang kamu dengarkan') : '';
   return heading + continueCard + mixBanner + albumSection + recentAddedSection + recentPlayedSection;
 }
 function renderAlbumDetail(key) {
@@ -646,8 +730,8 @@ function renderAlbumDetail(key) {
   const tracks = filteredTracks(album.tracks);
   const year = album.tracks.find(track => track.year)?.year;
   const art = album.cover
-    ? `<img src="${escapeHtml(album.cover)}" alt="Sampul ${escapeHtml(album.album)}">`
-    : `<div class="detail-art-fallback">♫</div>`;
+    ? `<img data-cover-image src="${escapeHtml(album.cover)}" alt="Sampul ${escapeHtml(album.album)}" decoding="async">`
+    : `<div class="detail-art-fallback">${coverGlyphMarkup()}</div>`;
   return `<section class="album-detail-hero"><div class="detail-artwork">${art}</div><div class="detail-copy"><span class="eyebrow">ALBUM</span><h1>${escapeHtml(album.album)}</h1><p class="detail-artist">${escapeHtml(album.artist)}</p><p class="detail-meta">${year ? `${escapeHtml(year)} · ` : ''}${album.tracks.length} lagu · ${formatTime(album.tracks.reduce((sum, track) => sum + (track.duration || 0), 0))}</p><div class="detail-actions"><button class="primary-button" data-action="play-album" data-album-key="${escapeHtml(album.key)}">${iconMarkup('play', 15)}<span class="button-label">Putar album</span></button><button class="secondary-button" data-action="queue-album" data-album-key="${escapeHtml(album.key)}">Tambahkan ke antrean</button></div></div></section>${trackListMarkup(tracks, 'Daftar lagu', `${tracks.length} lagu dari album ini`)}`;
 }
 
@@ -656,7 +740,7 @@ function renderArtistDetail(name) {
   if (!tracks.length) return pageHeading('Artis tidak ditemukan', 'KOLEKSI', 'Artis ini tidak lagi tersedia di perpustakaanmu.') + emptyState('Artis tidak tersedia', 'Pindai ulang folder musik untuk memperbarui koleksi.');
   const albums = albumGroups(tracks);
   const artTrack = tracks.find(track => track.cover);
-  const art = artTrack?.cover ? `<img src="${escapeHtml(artTrack.cover)}" alt="">` : `<span>${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
+  const art = artTrack?.cover ? `<img data-cover-image src="${escapeHtml(artTrack.cover)}" alt="" loading="lazy" decoding="async">` : `<span>${escapeHtml(name.slice(0, 1).toUpperCase())}</span>`;
   const albumSection = albums.length ? `<div class="section-heading"><div><h2>Album</h2><p>${albums.length} album dalam koleksi</p></div></div><div class="featured-grid">${albums.map((album, index) => albumCard(album, index)).join('')}</div>` : '';
   return `<section class="artist-detail-hero"><div class="artist-detail-avatar">${art}</div><div class="detail-copy"><span class="eyebrow">ARTIS</span><h1>${escapeHtml(name)}</h1><p class="detail-meta">${tracks.length} lagu · ${albums.length} album</p><div class="detail-actions"><button class="primary-button" data-action="play-artist" data-artist="${escapeHtml(name)}">${iconMarkup('play', 15)}<span class="button-label">Putar artis</span></button></div></div></section>${albumSection}${trackListMarkup(filteredTracks(tracks), 'Semua lagu', `Lagu dari ${name}`)}`;
 }
@@ -702,7 +786,7 @@ function renderNowPlaying() {
   const technical = [track.ext, track.lossless === true ? 'Lossless' : '', track.bitrate ? `${Math.round(track.bitrate / 1000)} kb/s` : '', track.sampleRate ? `${(track.sampleRate / 1000).toFixed(1)} kHz` : '', track.bitsPerSample ? `${track.bitsPerSample}-bit` : ''].filter(Boolean).join(' · ');
   return heading + `
     <section class="now-playing-view" aria-label="Lagu yang sedang diputar">
-      <div class="now-view-artwork">${track.cover ? `<img src="${escapeHtml(track.cover)}" alt="Sampul ${escapeHtml(track.album || track.title)}">` : '<div class="now-view-artwork-fallback">♫</div>'}</div>
+      <div class="now-view-artwork">${track.cover ? `<img data-cover-image src="${escapeHtml(track.cover)}" alt="Sampul ${escapeHtml(track.album || track.title)}" decoding="async">` : `<div class="now-view-artwork-fallback">${coverGlyphMarkup()}</div>`}</div>
       <div class="now-view-details">
         <span class="eyebrow">SEKARANG DIPUTAR</span>
         <h2>${escapeHtml(track.title)}</h2>
@@ -744,6 +828,7 @@ function updateNowPlayingTimeline() {
   if (slider && !isSeeking && Number.isFinite(audio.duration) && audio.duration > 0) {
     slider.value = String(Math.round(audio.currentTime / audio.duration * 1000));
   }
+  if (slider) syncRangeFill(slider);
 }
 
 const immersivePlayer = $('#immersive-player');
@@ -775,6 +860,7 @@ function syncImmersivePlayer() {
   syncImmersiveFavorite();
   updateImmersiveTimeline();
   $('#immersive-volume-slider').value = String(appState.volume);
+  refreshRangeFills(immersivePlayer);
 }
 
 function syncImmersivePlaybackState() {
@@ -804,6 +890,7 @@ function updateImmersiveTimeline() {
   if (!isSeeking) {
     current.textContent = formatTime(audio.currentTime || 0);
     slider.value = duration > 0 ? String(Math.round((audio.currentTime / duration) * 1000)) : '0';
+    syncRangeFill(slider);
   }
   total.textContent = formatTime(duration);
 }
@@ -836,7 +923,9 @@ function renderPage() {
   if (currentView === 'home') {
     content.innerHTML = renderHome();
   } else if (currentView === 'songs') {
-    content.innerHTML = pageHeading('Semua lagu', 'PERPUSTAKAAN', count ? `${count} lagu tersimpan di perangkat ini.` : 'Koleksi musik lokalmu.') + trackListMarkup(filteredTracks(library.tracks), 'Seluruh lagu');
+    const songTracks = filteredTracks(library.tracks);
+    const layoutActions = songsLayoutActions();
+    content.innerHTML = pageHeading('Semua lagu', 'PERPUSTAKAAN', count ? `${count} lagu tersimpan di perangkat ini.` : 'Koleksi musik lokalmu.', layoutActions) + (appState.songsLayout === 'grid' ? trackCardGridMarkup(sortedTracks(songTracks), '', '', { showHeader: false }) : trackListMarkup(songTracks, 'Seluruh lagu'));
   } else if (currentView === 'albums') {
     content.innerHTML = renderAlbums();
   } else if (currentView === 'artists') {
@@ -866,7 +955,7 @@ function renderPage() {
   } else if (currentView === 'playlist') {
     const playlist = appState.playlists.find(item => item.name === currentPlaylist);
     const tracks = filteredTracks((playlist?.ids || []).map(getTrackById).filter(Boolean));
-    const extra = `<div class="playlist-page-actions"><button class="secondary-button" data-action="rename-playlist">Ubah nama</button><button class="secondary-button" data-action="export-playlist">Ekspor M3U</button><button class="secondary-button danger-button" data-action="delete-playlist">Hapus playlist</button></div>`;
+    const extra = `<div class="playlist-page-actions"><button class="secondary-button" data-action="rename-playlist">Ubah nama</button><button class="secondary-button" data-action="organize-playlist">Atur folder</button><button class="secondary-button" data-action="export-playlist">Ekspor M3U</button><button class="secondary-button danger-button" data-action="delete-playlist">Hapus playlist</button></div>`;
     content.innerHTML = pageHeading(currentPlaylist || 'Playlist', 'PLAYLIST PRIBADI', `${tracks.length} lagu`, extra) + trackListMarkup(tracks, 'Isi playlist', '', true);
   } else if (currentView === 'smart-playlist') {
     content.innerHTML = renderSmartPlaylist(currentSmartPlaylistId);
@@ -875,6 +964,7 @@ function renderPage() {
     content.innerHTML = renderHome();
   }
   updateCurrentTrackHighlight();
+  refreshRangeFills(content);
 }
 
 function updateCurrentTrackHighlight() {
@@ -1015,7 +1105,7 @@ function playTrackAtQueuePosition(restoreTime = 0) {
   audio.volume = appState.volume;
   $('#now-title').textContent = track.title;
   $('#now-artist').textContent = `${track.artist} · ${track.album}`;
-  $('#now-cover').innerHTML = track.cover ? `<img src="${escapeHtml(track.cover)}" alt="">` : '<span>♫</span>';
+  $('#now-cover').innerHTML = track.cover ? `<img data-cover-image src="${escapeHtml(track.cover)}" alt="" decoding="async">` : coverGlyphMarkup();
   $('#now-cover').classList.toggle('cover-placeholder', !track.cover);
   $('#now-favorite').disabled = false;
   updateNowFavorite();
@@ -1142,7 +1232,7 @@ function createPlaylist(promptForSongId = null) {
     else toast('Playlist dengan nama itu sudah ada.');
     return;
   }
-  const playlist = { name: normalized, ids: [] };
+  const playlist = { name: normalized, folder: '', ids: [] };
   if (promptForSongId) playlist.ids.push(promptForSongId);
   appState.playlists.push(playlist);
   saveAppState();
@@ -1162,7 +1252,7 @@ function addTrackToPlaylist(trackId, playlistName = null) {
   }
   let playlist = appState.playlists.find(p => p.name.toLocaleLowerCase() === targetName.toLocaleLowerCase());
   if (!playlist) {
-    playlist = { name: targetName, ids: [] };
+    playlist = { name: targetName, folder: '', ids: [] };
     appState.playlists.push(playlist);
   }
   if (!playlist.ids.includes(trackId)) playlist.ids.push(trackId);
@@ -1199,6 +1289,113 @@ function renameCurrentPlaylist() {
   saveAppState();
   renderPage();
   toast(`Playlist diubah menjadi “${name}”.`);
+}
+
+function organizeCurrentPlaylist() {
+  if (!currentPlaylist) return;
+  const playlist = appState.playlists.find(item => item.name === currentPlaylist);
+  if (!playlist) return;
+  const suggestion = playlist.folder || appState.playlistFolders[0] || '';
+  const input = window.prompt('Nama folder playlist (kosongkan untuk melepas dari folder):', suggestion);
+  if (input === null) return;
+  const folder = input.trim().slice(0, 64);
+  playlist.folder = folder;
+  if (folder && !appState.playlistFolders.includes(folder)) appState.playlistFolders.push(folder);
+  appState.playlistFolders = [...new Set(appState.playlistFolders)].slice(0, 100);
+  saveAppState();
+  renderPage();
+  toast(folder ? `Playlist dipindahkan ke folder “${folder}”.` : 'Playlist dikeluarkan dari folder.');
+}
+
+function openTrackEditor(trackId) {
+  const track = getTrackById(trackId);
+  if (!track) return;
+  editingTrackId = trackId;
+  $('#track-edit-id').value = trackId;
+  $('#track-edit-title').value = track.title || '';
+  $('#track-edit-artist').value = track.artist || '';
+  $('#track-edit-album-artist').value = track.albumArtist || '';
+  $('#track-edit-album').value = track.album || '';
+  $('#track-edit-genre').value = track.genre || '';
+  $('#track-edit-year').value = track.year || '';
+  $('#track-edit-track-no').value = track.trackNo || '';
+  $('#track-edit-rating').value = String(trackRating(trackId));
+  $('#track-edit-technical').textContent = [track.ext, track.bitrate ? `${Math.round(track.bitrate / 1000)} kb/s` : '', track.sampleRate ? `${(track.sampleRate / 1000).toFixed(1)} kHz` : '', track.bitsPerSample ? `${track.bitsPerSample}-bit` : '', track.lossless ? 'Lossless' : ''].filter(Boolean).join(' · ');
+  $('#track-edit-dialog').showModal();
+  $('#track-edit-title').focus();
+}
+
+function saveTrackEditor(event) {
+  event.preventDefault();
+  const id = $('#track-edit-id').value;
+  const trackIndex = library.tracks.findIndex(track => track.id === id);
+  if (!id || trackIndex < 0) return toast('Lagu sudah tidak tersedia di perpustakaan.');
+  const baseTrack = originalTrackById.get(id) || library.tracks[trackIndex];
+  const values = {
+    title: $('#track-edit-title').value.trim().slice(0, 240) || baseTrack.title || 'Unknown Title',
+    artist: $('#track-edit-artist').value.trim().slice(0, 240) || baseTrack.artist || 'Unknown Artist',
+    albumArtist: $('#track-edit-album-artist').value.trim().slice(0, 240) || baseTrack.albumArtist || baseTrack.artist || 'Unknown Artist',
+    album: $('#track-edit-album').value.trim().slice(0, 240) || baseTrack.album || 'Unknown Album',
+    genre: $('#track-edit-genre').value.trim().slice(0, 120) || baseTrack.genre || ''
+  };
+  const year = Number($('#track-edit-year').value);
+  const trackNo = Number($('#track-edit-track-no').value);
+  if ($('#track-edit-year').value && (!Number.isInteger(year) || year < 1000 || year > 3000)) return toast('Tahun harus antara 1000 dan 3000.');
+  if ($('#track-edit-track-no').value && (!Number.isInteger(trackNo) || trackNo < 0 || trackNo > 9999)) return toast('Nomor track tidak valid.');
+  if ($('#track-edit-year').value) values.year = year;
+  else if (Number.isInteger(baseTrack.year) && baseTrack.year > 0) values.year = baseTrack.year;
+  if ($('#track-edit-track-no').value) values.trackNo = trackNo;
+  else if (Number.isInteger(baseTrack.trackNo) && baseTrack.trackNo > 0) values.trackNo = baseTrack.trackNo;
+  appState.metadataOverrides[id] = values;
+  appState.ratings[id] = Number($('#track-edit-rating').value) || 0;
+  const original = originalTrackById.get(id) || library.tracks[trackIndex];
+  library.tracks[trackIndex] = { ...original, ...values };
+  if (appState.ratings[id] === 0) delete appState.ratings[id];
+  saveAppState();
+  $('#track-edit-dialog').close();
+  if (activeTrackId === id) {
+    const track = library.tracks[trackIndex];
+    $('#now-title').textContent = track.title;
+    $('#now-artist').textContent = `${track.artist} · ${track.album}`;
+    updateMediaSession(track);
+    syncImmersivePlayer();
+    syncNowPlayingView();
+  }
+  renderPage();
+  toast('Info dan rating disimpan di Luma; file audio asli tidak diubah.');
+}
+
+function resetTrackEditor() {
+  const id = $('#track-edit-id').value;
+  const trackIndex = library.tracks.findIndex(track => track.id === id);
+  const original = originalTrackById.get(id);
+  if (!id || trackIndex < 0 || !original) return;
+  delete appState.metadataOverrides[id];
+  delete appState.ratings[id];
+  library.tracks[trackIndex] = { ...original };
+  saveAppState();
+  openTrackEditor(id);
+  toast('Info lokal dan rating direset ke metadata asli.');
+}
+
+async function exportAppBackup() {
+  saveAppState();
+  const state = JSON.parse(localStorage.getItem('luma-music-state') || '{}');
+  try {
+    const result = await window.lumaMusic.exportAppBackup({ schema: 1, state });
+    if (!result?.canceled) toast('Cadangan Luma berhasil diekspor.');
+  } catch (error) { toast(error?.message || 'Tidak bisa mengekspor cadangan.'); }
+}
+
+async function importAppBackup() {
+  try {
+    const result = await window.lumaMusic.importAppBackup();
+    if (!result || result.canceled) return;
+    if (result.schema !== 1 || !result.state || typeof result.state !== 'object' || Array.isArray(result.state)) throw new Error('Format cadangan tidak didukung.');
+    localStorage.setItem('luma-music-state', JSON.stringify(result.state));
+    toast('Cadangan dipulihkan. Luma akan dimuat ulang…');
+    window.setTimeout(() => window.location.reload(), 450);
+  } catch (error) { toast(error?.message || 'Tidak dapat memulihkan cadangan.'); }
 }
 
 async function importPlaylistM3U() {
@@ -1362,6 +1559,48 @@ function applyMaterialMode(mode, notify = true) {
   if (notify) toast(appState.material === 'glass' ? 'Material kaca buram aktif.' : 'Material solid aktif. Blur dimatikan.');
 }
 
+function applyThemeMode(mode, notify = true) {
+  appState.theme = ['light', 'system'].includes(mode) ? mode : 'dark';
+  document.body.dataset.theme = appState.theme;
+  const systemLight = appState.theme === 'system' && window.matchMedia?.('(prefers-color-scheme: light)').matches;
+  document.body.classList.toggle('system-light', Boolean(systemLight));
+  const selector = $('#theme-mode');
+  if (selector) selector.value = appState.theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = (appState.theme === 'light' || systemLight) ? '#f4f6f1' : '#111312';
+  saveAppState();
+  if (notify) toast(appState.theme === 'light' ? 'Tema terang aktif.' : appState.theme === 'system' ? 'Tema mengikuti pengaturan sistem.' : 'Tema gelap aktif.');
+}
+
+function syncRangeFill(input) {
+  if (!input || !input.matches('input[type="range"]')) return;
+  const min = Number.isFinite(Number(input.min)) ? Number(input.min) : 0;
+  const max = Number.isFinite(Number(input.max)) ? Number(input.max) : 100;
+  const value = Number.isFinite(Number(input.value)) ? Number(input.value) : min;
+  const pct = max > min ? Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)) : 0;
+  input.style.setProperty('--range-fill', `${pct}%`);
+}
+
+function refreshRangeFills(root = document) {
+  root.querySelectorAll('input[type="range"]').forEach(syncRangeFill);
+}
+
+function handleCoverLoadFailure(event) {
+  const image = event.target;
+  if (!(image instanceof HTMLImageElement) || (!image.matches('[data-cover-image]') && !['immersive-cover-image', 'immersive-backdrop-image'].includes(image.id))) return;
+  if (image.id === 'immersive-backdrop-image') { image.removeAttribute('src'); return; }
+  const host = image.parentElement;
+  if (!host) return;
+  image.remove();
+  host.classList.add('cover-image-failed');
+  if (!host.querySelector(':scope > .cover-art-fallback')) {
+    const fallback = document.createElement('div');
+    fallback.className = 'cover-art-fallback';
+    fallback.innerHTML = coverGlyphMarkup();
+    host.prepend(fallback);
+  }
+}
+
 function setRepeatMode(mode, announce = true) {
   repeatMode = Math.max(0, Math.min(2, Number(mode) || 0));
   setRepeatControl($('#repeat-button'), repeatMode);
@@ -1411,7 +1650,7 @@ function handleMenuCommand(command) {
   if (command === 'clear-upcoming-queue') return clearUpcomingQueue();
   if (command === 'toggle-material') return applyMaterialMode(appState.material === 'glass' ? 'solid' : 'glass');
   if (command === 'show-shortcuts') return settingsDialog.showModal();
-  if (command === 'show-about') return toast('Luma Music 2.0.0 · Open source · Lisensi MIT.');
+  if (command === 'show-about') return toast('Luma Music Max 3.1.0 · Glass UI Preview · Open source · Lisensi MIT.');
 }
 
 function playAlbumKey(key) {
@@ -1713,7 +1952,7 @@ function removeQueuePosition(position) {
     appState.lastTime = 0;
     $('#now-title').textContent = 'Belum ada lagu diputar';
     $('#now-artist').textContent = 'Pilih lagu dari perpustakaan';
-    $('#now-cover').innerHTML = '<span>♫</span>';
+    $('#now-cover').innerHTML = coverGlyphMarkup();
     $('#now-cover').classList.add('cover-placeholder');
     $('#now-favorite').disabled = true;
     $('#play-button').disabled = true;
@@ -1766,7 +2005,7 @@ function replaceLibrary(data) {
     appState.lastTime = 0;
     $('#now-title').textContent = 'Belum ada lagu diputar';
     $('#now-artist').textContent = 'Impor folder musik untuk memulai';
-    $('#now-cover').innerHTML = '<span>♫</span>';
+    $('#now-cover').innerHTML = coverGlyphMarkup();
     $('#now-cover').classList.add('cover-placeholder');
     $('#now-favorite').disabled = true;
     $('#play-button').disabled = true;
@@ -1779,6 +2018,7 @@ content.addEventListener('click', event => {
   if (!actionNode) return;
   const { action } = actionNode.dataset;
   if (action === 'import-folder') return chooseFolder();
+  if (action === 'set-songs-layout') { appState.songsLayout = actionNode.dataset.layout === 'list' ? 'list' : 'grid'; saveAppState(); renderPage(); return; }
   if (action === 'show-songs') return setView('songs');
   if (action === 'show-albums') return setView('albums');
   if (action === 'open-immersive-player') return openImmersivePlayer();
@@ -1805,6 +2045,7 @@ content.addEventListener('click', event => {
       : allIndexes(currentViewTracks());
     playIndexes(visibleIndexes, clickedIndex);
   }
+  if (action === 'edit-track') { event.stopPropagation(); return openTrackEditor(actionNode.dataset.id); }
   if (action === 'favorite') {
     event.stopPropagation();
     return toggleFavorite(actionNode.dataset.id);
@@ -1830,6 +2071,7 @@ content.addEventListener('click', event => {
   if (action === 'play-artist') return playArtist(actionNode.dataset.artist);
   if (action === 'delete-playlist') return deleteCurrentPlaylist();
   if (action === 'rename-playlist') return renameCurrentPlaylist();
+  if (action === 'organize-playlist') return organizeCurrentPlaylist();
   if (action === 'export-playlist') return exportCurrentPlaylistM3U();
   if (action === 'edit-smart-playlist') return openSmartPlaylistEditor(appState.smartPlaylists.find(item => item.id === actionNode.dataset.id));
   if (action === 'delete-smart-playlist') return deleteSmartPlaylist(actionNode.dataset.id);
@@ -1838,6 +2080,7 @@ content.addEventListener('click', event => {
 });
 
 content.addEventListener('input', event => {
+  if (event.target.matches('input[type="range"]')) syncRangeFill(event.target);
   if (event.target.matches('#now-view-seek-slider')) {
     isSeeking = true;
     if (Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -1846,7 +2089,7 @@ content.addEventListener('input', event => {
   }
 });
 content.addEventListener('change', event => {
-  if (event.target.matches('#track-sort')) {
+  if (event.target.matches('#track-sort, #track-sort-grid')) {
     appState.sortMode = event.target.value;
     saveAppState();
     renderPage();
@@ -1966,18 +2209,22 @@ $('#shuffle-button').addEventListener('click', () => {
 $('#repeat-button').addEventListener('click', () => setRepeatMode((repeatMode + 1) % 3));
 
 $('#material-mode').addEventListener('change', event => applyMaterialMode(event.target.value));
+$('#theme-mode').addEventListener('change', event => applyThemeMode(event.target.value));
 window.lumaMusic.onMenuCommand(handleMenuCommand);
 
 $('#now-cover').addEventListener('click', () => setView('now-playing'));
 $('#player-now-playing').addEventListener('click', () => setView('now-playing'));
 $('#now-favorite').addEventListener('click', () => { if (activeTrackId) toggleFavorite(activeTrackId); });
 $('#volume-slider').addEventListener('input', event => {
+  syncRangeFill(event.target);
   appState.volume = Number(event.target.value);
   audio.volume = appState.volume;
   $('#immersive-volume-slider').value = String(appState.volume);
+  refreshRangeFills();
   saveAppState();
 });
-$('#seek-slider').addEventListener('input', () => {
+$('#seek-slider').addEventListener('input', event => {
+  syncRangeFill(event.target);
   isSeeking = true;
   if (Number.isFinite(audio.duration) && audio.duration > 0) {
     $('#current-time').textContent = formatTime(audio.duration * (Number($('#seek-slider').value) / 1000));
@@ -1986,6 +2233,7 @@ $('#seek-slider').addEventListener('input', () => {
 $('#seek-slider').addEventListener('change', () => {
   if (Number.isFinite(audio.duration) && audio.duration > 0) audio.currentTime = audio.duration * (Number($('#seek-slider').value) / 1000);
   isSeeking = false;
+  refreshRangeFills();
 });
 audio.addEventListener('timeupdate', () => {
   accumulateListeningTime();
@@ -1993,6 +2241,7 @@ audio.addEventListener('timeupdate', () => {
     if (!isSeeking) $('#seek-slider').value = String(Math.round(audio.currentTime / audio.duration * 1000));
     $('#current-time').textContent = formatTime(audio.currentTime);
     $('#total-time').textContent = formatTime(audio.duration);
+    refreshRangeFills();
   }
   appState.lastTime = audio.currentTime || 0;
   updateNowPlayingTimeline();
@@ -2057,6 +2306,12 @@ $('#nav-back').addEventListener('click', () => navigateHistory(-1));
 $('#nav-forward').addEventListener('click', () => navigateHistory(1));
 $('#settings-button').addEventListener('click', () => settingsDialog.showModal());
 $('#close-settings').addEventListener('click', () => settingsDialog.close());
+$('#export-app-backup').addEventListener('click', exportAppBackup);
+$('#import-app-backup').addEventListener('click', importAppBackup);
+$('#close-track-edit').addEventListener('click', () => $('#track-edit-dialog').close());
+$('#cancel-track-edit').addEventListener('click', () => $('#track-edit-dialog').close());
+$('#track-edit-form').addEventListener('submit', saveTrackEditor);
+$('#reset-track-edit').addEventListener('click', resetTrackEditor);
 $('#settings-import').addEventListener('click', () => { settingsDialog.close(); chooseFolder(); });
 $('#forget-library').addEventListener('click', async () => {
   if (!window.confirm('Lepas folder musik dari Luma? File musik asli tidak akan dihapus.')) return;
@@ -2069,7 +2324,7 @@ $('#forget-library').addEventListener('click', async () => {
     appState.lastTime = 0;
     $('#now-title').textContent = 'Belum ada lagu diputar';
     $('#now-artist').textContent = 'Impor folder musik untuk memulai';
-    $('#now-cover').innerHTML = '<span>♫</span>';
+    $('#now-cover').innerHTML = coverGlyphMarkup();
     $('#now-favorite').disabled = true;
     $('#play-button').disabled = true;
     setPlayControl($('#play-button'), true);
@@ -2144,6 +2399,7 @@ $('#immersive-lyrics').addEventListener('click', toggleLyrics);
 $('#immersive-equalizer').addEventListener('click', () => { equalizerDialog.showModal(); requestAnimationFrame(drawEqualizerCurve); });
 $('#immersive-queue').addEventListener('click', () => { renderQueue(); queueDialog.showModal(); });
 $('#immersive-seek-slider').addEventListener('input', event => {
+  syncRangeFill(event.target);
   isSeeking = true;
   if (Number.isFinite(audio.duration) && audio.duration > 0) $('#immersive-current-time').textContent = formatTime(audio.duration * (Number(event.target.value) / 1000));
 });
@@ -2153,9 +2409,11 @@ $('#immersive-seek-slider').addEventListener('change', event => {
   updateImmersiveTimeline();
 });
 $('#immersive-volume-slider').addEventListener('input', event => {
+  syncRangeFill(event.target);
   appState.volume = Number(event.target.value);
   audio.volume = appState.volume;
   $('#volume-slider').value = String(appState.volume);
+  refreshRangeFills();
   saveAppState();
 });
 
@@ -2248,6 +2506,7 @@ trackContextMenu.addEventListener('click', event => {
   if (action === 'add-queue') return addTrackToQueue(index, false);
   if (action === 'playlist') return addTrackToPlaylist(track.id);
   if (action === 'favorite') return toggleFavorite(track.id);
+  if (action === 'edit-metadata') return openTrackEditor(track.id);
 });
 document.addEventListener('pointerdown', event => {
   if (!trackContextMenu.hidden && !trackContextMenu.contains(event.target)) closeTrackContextMenu();
@@ -2265,10 +2524,15 @@ scanUnsubscribe = window.lumaMusic.onScanProgress(progress => {
 async function init() {
   audio.volume = appState.volume;
   $('#volume-slider').value = String(appState.volume);
+  refreshRangeFills();
   $('#autoplay-local').checked = appState.autoContinue;
   setShuffleControl($('#shuffle-button'), isShuffle);
   setRepeatControl($('#repeat-button'), repeatMode);
   applyMaterialMode(appState.material, false);
+  applyThemeMode(appState.theme, false);
+  const colorScheme = window.matchMedia('(prefers-color-scheme: light)');
+  colorScheme.addEventListener?.('change', () => { if (appState.theme === 'system') applyThemeMode('system', false); });
+  refreshRangeFills();
   syncPlaybackMenuState();
   initializeEqualizer();
   try {
@@ -2298,7 +2562,7 @@ async function init() {
     const track = getTrackById(appState.lastTrack);
     $('#now-title').textContent = track.title;
     $('#now-artist').textContent = `${track.artist} · ${track.album}`;
-    $('#now-cover').innerHTML = track.cover ? `<img src="${escapeHtml(track.cover)}" alt="">` : '<span>♫</span>';
+    $('#now-cover').innerHTML = track.cover ? `<img data-cover-image src="${escapeHtml(track.cover)}" alt="" decoding="async">` : coverGlyphMarkup();
     $('#now-cover').classList.toggle('cover-placeholder', !track.cover);
     $('#now-favorite').disabled = false;
     activeTrackId = track.id;

@@ -19,7 +19,9 @@ const __dirname = path.dirname(__filename);
 const AUDIO_EXTENSIONS = new Set([
   '.mp3', '.flac', '.wav', '.ogg', '.opus', '.m4a', '.aac', '.aiff', '.aif', '.webm'
 ]);
-const MAX_ART_BYTES = 160 * 1024;
+const MAX_ART_BYTES = 3 * 1024 * 1024; // Allow higher-resolution embedded/local artwork without unbounded cache growth.
+const ARTWORK_MIME = new Map([['.jpg', 'image/jpeg'], ['.jpeg', 'image/jpeg'], ['.png', 'image/png'], ['.webp', 'image/webp'], ['.gif', 'image/gif']]);
+const ARTWORK_EXTENSIONS = new Set(ARTWORK_MIME.keys());
 const MAX_LYRICS_BYTES = 2 * 1024 * 1024;
 const audioFiles = new Map();
 let mainWindow;
@@ -46,7 +48,7 @@ function assertTrustedSender(event) {
 }
 
 function emptyCache() {
-  return { folder: null, tracks: [], covers: {}, scannedAt: null };
+  return { folder: null, tracks: [], covers: {}, scannedAt: null, artworkVersion: 2 };
 }
 
 async function readCache() {
@@ -66,7 +68,8 @@ async function readCache() {
       folder,
       tracks,
       covers,
-      scannedAt: typeof data.scannedAt === 'string' ? data.scannedAt : null
+      scannedAt: typeof data.scannedAt === 'string' ? data.scannedAt : null,
+      artworkVersion: Number.isInteger(data.artworkVersion) ? data.artworkVersion : 0
     };
   } catch {
     return emptyCache();
@@ -137,10 +140,60 @@ function firstString(value) {
   return typeof value === 'string' ? value : '';
 }
 
-async function buildTrack(filePath, cachedTrack = null, cachedCover = null) {
+async function readSiblingArtwork(filePath, cache = new Map()) {
+  const directory = path.dirname(filePath);
+  const listingKey = `listing:${directory}`;
+  let listingPromise = cache.get(listingKey);
+  if (!listingPromise) {
+    listingPromise = (async () => {
+      try {
+        return (await fs.readdir(directory, { withFileTypes: true }))
+          .filter(entry => entry.isFile() && ARTWORK_EXTENSIONS.has(path.extname(entry.name).toLowerCase()));
+      } catch { return []; }
+    })();
+    cache.set(listingKey, listingPromise);
+  }
+  const files = await listingPromise;
+  if (!files.length) return null;
+  const audioStem = path.basename(filePath, path.extname(filePath)).toLocaleLowerCase();
+  const preferred = ['cover', 'folder', 'album', 'front', 'albumart', 'album-art', 'album_art', 'artwork', 'art'];
+  const extensionRank = ext => ({ '.jpg': 0, '.jpeg': 1, '.png': 2, '.webp': 3, '.gif': 4 }[ext] ?? 9);
+  const rank = entry => {
+    const stem = path.basename(entry.name, path.extname(entry.name)).toLocaleLowerCase();
+    if (stem === audioStem) return -2;
+    const commonIndex = preferred.indexOf(stem);
+    return commonIndex >= 0 ? commonIndex : 100 + extensionRank(path.extname(entry.name).toLowerCase());
+  };
+  const candidates = [...files].sort((a, b) => rank(a) - rank(b) || extensionRank(path.extname(a.name).toLowerCase()) - extensionRank(path.extname(b.name).toLowerCase()));
+  for (const entry of candidates) {
+    const candidate = path.join(directory, entry.name);
+    const artKey = `art:${candidate}`;
+    if (cache.has(artKey)) {
+      const known = await cache.get(artKey);
+      if (known) return known;
+      continue;
+    }
+    const artPromise = (async () => {
+      try {
+        const stat = await fs.stat(candidate);
+        if (!stat.isFile() || stat.size < 16 || stat.size > MAX_ART_BYTES) return null;
+        const data = await fs.readFile(candidate);
+        const mime = ARTWORK_MIME.get(path.extname(candidate).toLowerCase());
+        if (!mime) return null;
+        return `data:${mime};base64,${data.toString('base64')}`;
+      } catch { return null; }
+    })();
+    cache.set(artKey, artPromise);
+    const image = await artPromise;
+    if (image) return image;
+  }
+  return null;
+}
+
+async function buildTrack(filePath, cachedTrack = null, cachedCover = null, artworkCache = new Map()) {
   const stat = await fs.stat(filePath);
   const id = stableTrackId(filePath);
-  if (cachedTrack && cachedTrack.size === stat.size && cachedTrack.mtimeMs === stat.mtimeMs) {
+  if (cachedTrack && cachedTrack.size === stat.size && cachedTrack.mtimeMs === stat.mtimeMs && cachedCover) {
     const artist = cleanText(cachedTrack.artist, 'Unknown Artist');
     return {
       ...cachedTrack,
@@ -173,6 +226,7 @@ async function buildTrack(filePath, cachedTrack = null, cachedCover = null) {
   } catch {
     // A playable audio file remains in the library even if its tags are malformed.
   }
+  if (!cover) cover = await readSiblingArtwork(filePath, artworkCache);
 
   const artist = Array.isArray(tags.artists) && tags.artists.length
     ? tags.artists.join(', ')
@@ -224,6 +278,7 @@ async function scanFolder(root, sender) {
 
     const files = await collectAudioFiles(absoluteRoot, sender);
     const tracks = new Array(files.length);
+    const artworkCache = new Map();
     let cursor = 0;
     let completed = 0;
     let reused = 0;
@@ -233,7 +288,7 @@ async function scanFolder(root, sender) {
         const file = files[index];
         const old = oldByPath.get(path.resolve(file));
         try {
-          const candidate = await buildTrack(file, old, old?.coverId ? oldCovers[old.coverId] : null);
+          const candidate = await buildTrack(file, old, old?.coverId ? oldCovers[old.coverId] : null, artworkCache);
           if (old && old.size === candidate.size && old.mtimeMs === candidate.mtimeMs) reused += 1;
           tracks[index] = candidate;
         } catch {
@@ -266,7 +321,7 @@ async function scanFolder(root, sender) {
       delete track.cover;
     }
 
-    const payload = { folder: absoluteRoot, tracks: cleanTracks, covers, scannedAt: new Date().toISOString() };
+    const payload = { folder: absoluteRoot, tracks: cleanTracks, covers, scannedAt: new Date().toISOString(), artworkVersion: 2 };
     await writeCache(payload);
     registerAudioFiles(payload);
     if (sender && !sender.isDestroyed()) sender.send('library:progress', { phase: 'done', completed: files.length, total: files.length, reused });
@@ -460,7 +515,7 @@ function installApplicationMenu() {
         { type: 'separator' },
         { label: 'Pengaturan…', click: () => sendMenuCommand('open-settings') },
         { type: 'separator' },
-        { role: 'quit', label: 'Keluar dari Luma Music' }
+        { role: 'quit', label: 'Keluar dari Luma Music Max' }
       ]
     },
     {
@@ -532,7 +587,7 @@ function installApplicationMenu() {
       label: 'Bantuan',
       submenu: [
         { label: 'Pintasan Keyboard', click: () => sendMenuCommand('show-shortcuts') },
-        { label: 'Tentang Luma Music', click: () => sendMenuCommand('show-about') }
+        { label: 'Tentang Luma Music Max', click: () => sendMenuCommand('show-about') }
       ]
     }
   ];
@@ -552,7 +607,7 @@ function createWindow() {
     minHeight,
     show: false,
     backgroundColor: '#101014',
-    title: 'Luma Music',
+    title: 'Luma Music Max',
     autoHideMenuBar: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -584,7 +639,17 @@ ipcMain.handle('window:set-fullscreen', (event, enabled) => {
 
 ipcMain.handle('library:load', async event => {
   assertTrustedSender(event);
-  const data = await readCache();
+  let data = await readCache();
+  // One-time cache refresh for libraries created before larger embedded-art and
+  // sibling-cover support was added. Existing songs and user data remain local.
+  if (data.folder && data.artworkVersion < 2) {
+    try {
+      const folderStat = await fs.stat(data.folder);
+      if (folderStat.isDirectory()) data = await scanFolder(data.folder, event.sender);
+    } catch (error) {
+      console.warn('Artwork cache refresh skipped; using existing library cache:', error?.message || error);
+    }
+  }
   registerAudioFiles(data);
   return publicLibrary(data);
 });
@@ -626,6 +691,47 @@ ipcMain.handle('library:migrate-track-ids', async (event, ids) => {
     aliases.set(track.path, track.id);
   }
   return ids.slice(0, 50000).map(id => typeof id === 'string' ? (aliases.get(id) || id) : id);
+});
+
+
+const MAX_APP_BACKUP_BYTES = 4 * 1024 * 1024;
+
+ipcMain.handle('appdata:export-backup', async (event, backup) => {
+  assertTrustedSender(event);
+  if (!backup || typeof backup !== 'object' || backup.schema !== 1 || !backup.state || typeof backup.state !== 'object' || Array.isArray(backup.state)) {
+    throw new Error('Format cadangan Luma tidak valid.');
+  }
+  const serialized = JSON.stringify({ schema: 1, app: 'Luma Music Max', exportedAt: new Date().toISOString(), state: backup.state });
+  if (Buffer.byteLength(serialized, 'utf8') > MAX_APP_BACKUP_BYTES) throw new Error('Cadangan terlalu besar (maksimal 4 MiB).');
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: 'Ekspor cadangan Luma Music',
+    defaultPath: 'luma-music-backup.json',
+    buttonLabel: 'Simpan cadangan',
+    filters: [{ name: 'Cadangan Luma JSON', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  await fs.writeFile(result.filePath, `${JSON.stringify({ schema: 1, app: 'Luma Music Max', exportedAt: new Date().toISOString(), state: backup.state }, null, 2)}\n`, 'utf8');
+  return { canceled: false, filePath: result.filePath };
+});
+
+ipcMain.handle('appdata:import-backup', async event => {
+  assertTrustedSender(event);
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Pulihkan cadangan Luma Music',
+    buttonLabel: 'Buka cadangan',
+    properties: ['openFile'],
+    filters: [{ name: 'Cadangan Luma JSON', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { canceled: true };
+  const stat = await fs.stat(result.filePaths[0]);
+  if (!stat.isFile() || stat.size > MAX_APP_BACKUP_BYTES) throw new Error('File cadangan tidak valid atau lebih besar dari 4 MiB.');
+  let data;
+  try { data = JSON.parse(await fs.readFile(result.filePaths[0], 'utf8')); }
+  catch { throw new Error('File cadangan bukan JSON yang valid.'); }
+  if (!data || data.schema !== 1 || data.app !== 'Luma Music Max' || !data.state || typeof data.state !== 'object' || Array.isArray(data.state)) {
+    throw new Error('File ini bukan cadangan Luma Music Max yang didukung.');
+  }
+  return { canceled: false, schema: 1, state: data.state };
 });
 
 ipcMain.handle('playlist:import-m3u', importPlaylistM3U);
